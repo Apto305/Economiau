@@ -1,0 +1,556 @@
+// Economiau — estado, navegação e ações.
+import { CONFIG } from './config.js';
+import * as G from './google.js';
+import { BancoPlanilha, BancoDemo } from './dados.js';
+import * as R from './regras.js';
+import * as T from './telas.js';
+import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero } from './util.js';
+
+const LS = {
+  get: (k, d = null) => { try { const v = localStorage.getItem('economiau-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set: (k, v) => { try { localStorage.setItem('economiau-' + k, JSON.stringify(v)); } catch (e) { /* sem armazenamento */ } },
+  del: (k) => { try { localStorage.removeItem('economiau-' + k); } catch (e) { /* ignora */ } },
+};
+
+const E = {
+  fase: 'iniciando', erro: '', msgCarregando: '', email: LS.get('email', ''), banco: null, db: null,
+  perfil: LS.get('perfil'), rota: 'inicio', mes: mesDe(hojeISO()), filtro: 'tudo', modal: null, modalPai: null,
+  ocultar: LS.get('ocultar', false), toast: null, salvando: false, sessaoExpirada: false, versao: CONFIG.versaoApp,
+  cartaoSel: null, faturaSel: null,
+};
+window.__economiau = E; // ajuda a depurar pelo console
+
+// ------------------------------------------------------------ desenho
+const raiz = document.getElementById('app');
+function desenhar() {
+  const foco = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.campo : null;
+  const rolagens = [...document.querySelectorAll('.rolar, .folha')].map((el) => el.scrollTop);
+  const y = window.scrollY;
+  document.body.className = 'perfil-' + (E.db && E.perfil ? T.apoio(E).chave(E.perfil) : 'demetrio');
+  let html = '';
+  if (E.fase === 'iniciando' || E.fase === 'carregando') html = T.telaCarregando(E);
+  else if (E.fase === 'entrar') html = T.telaEntrar(E);
+  else if (E.fase === 'conectar') html = T.telaConectar(E);
+  else if (E.fase === 'negado') html = T.telaNegado(E);
+  else if (E.fase === 'erro') html = T.telaErro(E);
+  else if (E.rota === 'perfis' || !E.perfil) html = T.telaPerfis(E);
+  else {
+    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro };
+    html = (telas[E.rota] || T.telaInicio)(E) + T.modal(E);
+  }
+  raiz.innerHTML = html + T.toast(E);
+  [...document.querySelectorAll('.rolar, .folha')].forEach((el, i) => { if (rolagens[i]) el.scrollTop = rolagens[i]; });
+  window.scrollTo(0, y);
+  if (foco) {
+    const el = document.querySelector('[data-campo="' + foco + '"]');
+    if (el) { el.focus(); if (el.setSelectionRange && el.type !== 'date' && el.type !== 'number') { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (e) { /* tipo sem cursor */ } } }
+  }
+}
+
+let timerToast = null;
+function avisar(msg, erro = false) {
+  E.toast = { msg, erro };
+  desenhar();
+  clearTimeout(timerToast);
+  timerToast = setTimeout(() => { E.toast = null; desenhar(); }, erro ? 6000 : 2800);
+}
+
+// ------------------------------------------------------------ início
+async function iniciar() {
+  window.addEventListener('hashchange', () => { lerRota(); desenhar(); });
+  lerRota();
+  if (LS.get('demo')) return abrirDemo();
+  desenhar();
+  try { await G.prepararLogin(); } catch (e) { /* sem internet: tenta seguir */ }
+  if (G.tokenValido()) return depoisDoLogin();
+  E.fase = 'entrar';
+  desenhar();
+}
+
+function lerRota() {
+  const r = (location.hash || '').replace(/^#\/?/, '') || 'inicio';
+  E.rota = r;
+  E.modal = null; E.modalPai = null;
+}
+function ir(rota) { if (location.hash !== '#/' + rota) location.hash = '#/' + rota; else { E.rota = rota; desenhar(); } }
+
+async function abrirDemo() {
+  E.banco = new BancoDemo();
+  E.email = 'demo-demetrio@exemplo.com';
+  E.db = await E.banco.carregar();
+  if (!E.perfil || !R.porId(E.db.pessoas, E.perfil)) E.perfil = null;
+  E.fase = 'pronto';
+  desenhar();
+}
+
+async function depoisDoLogin() {
+  E.fase = 'carregando'; E.msgCarregando = 'Entrando…'; desenhar();
+  try {
+    const u = await G.usuario();
+    E.email = (u.email || '').toLowerCase();
+    LS.set('email', E.email);
+  } catch (e) {
+    E.fase = 'entrar'; E.erro = e instanceof G.SessaoExpirada ? '' : e.message; desenhar(); return;
+  }
+  const id = LS.get('planilha');
+  if (!id) { E.fase = 'conectar'; E.erro = ''; desenhar(); return; }
+  carregarPlanilha(id);
+}
+
+async function carregarPlanilha(id) {
+  E.fase = 'carregando'; E.msgCarregando = 'Lendo a planilha…'; desenhar();
+  try {
+    E.banco = new BancoPlanilha(id);
+    E.db = await E.banco.carregar();
+  } catch (e) {
+    if (e instanceof G.SessaoExpirada) { E.fase = 'entrar'; E.erro = ''; desenhar(); return; }
+    if (e.status === 403 || e.status === 404) { LS.del('planilha'); E.fase = 'conectar'; E.erro = 'O app não conseguiu abrir a planilha. Escolha de novo no seletor.'; desenhar(); return; }
+    E.fase = 'erro'; E.erro = e.message; desenhar(); return;
+  }
+  const pessoa = E.db.pessoas.find((p) => String(p.email || '').toLowerCase() === E.email);
+  if (!pessoa) { E.fase = 'negado'; desenhar(); return; }
+  if (!E.perfil || !R.porId(E.db.pessoas, E.perfil)) E.perfil = null;
+  E.fase = 'pronto'; E.erro = ''; E.sessaoExpirada = false;
+  if (!E.db.contas.some(R.ativo) && !LS.get('primeiro-ok-' + id)) { if (E.perfil) ir('primeiro'); }
+  desenhar();
+}
+
+// Recarrega os dados depois de uma escrita (garante números de linha certos)
+async function recarregarDados() {
+  try { E.db = await E.banco.carregar(); } catch (e) { tratarErro(e); }
+}
+
+function tratarErro(e) {
+  if (e instanceof G.SessaoExpirada) { E.sessaoExpirada = true; avisar('A sessão do Google expirou. Toque em Continuar.', true); return; }
+  avisar(e.message || 'Algo deu errado.', true);
+}
+
+async function salvar(fn) {
+  if (E.salvando) return;
+  E.salvando = true; desenhar();
+  try { await fn(); } catch (e) { E.salvando = false; tratarErro(e); return false; }
+  E.salvando = false;
+  return true;
+}
+
+// ------------------------------------------------------------ apoio
+const fam = () => R.familia(E.db);
+const pessoas = () => R.pessoasReais(E.db);
+const formAtual = () => (E.modal && E.modal.form) || (E.modalPai && E.modalPai.form);
+const eu = () => (E.db.pessoas.find((p) => String(p.email || '').toLowerCase() === E.email) || pessoas()[0] || {}).id;
+const donoPadrao = () => (E.perfil && fam() && E.perfil !== fam().id ? E.perfil : eu());
+const primeiraConta = (dono) => (E.db.contas.find((c) => c.dono === dono && R.ativo(c)) || E.db.contas.find(R.ativo) || {}).id || '';
+const primeiroCartao = (dono) => (E.db.cartoes.find((c) => c.dono === dono && R.ativo(c)) || E.db.cartoes.find(R.ativo) || {}).id || '';
+
+function novoForm(tipo = 'despesa') {
+  const quem = donoPadrao();
+  return {
+    tipo, valor: '', data: hojeISO(), dataModo: 'hoje', desc: '', categoria: '', obs: '',
+    conta: primeiraConta(quem), cartao: primeiroCartao(quem), contaDestino: '', parcelas: 1, meio: 'Pix',
+    dono: fam() ? fam().id : quem, renda: true, transf: 'fatura',
+  };
+}
+
+// ------------------------------------------------------------ ações
+const A = {
+  async entrar() {
+    E.erro = '';
+    try { await G.entrar(E.email); } catch (e) { E.erro = e.message; desenhar(); return; }
+    LS.del('demo');
+    depoisDoLogin();
+  },
+  entrarDemo() { LS.set('demo', true); E.perfil = null; abrirDemo(); },
+  async escolherPlanilha() {
+    E.erro = '';
+    if (!G.tokenValido()) { try { await G.entrar(E.email); } catch (e) { E.erro = e.message; desenhar(); return; } }
+    let p;
+    try { p = await G.escolherPlanilha(); } catch (e) { E.erro = e.message; desenhar(); return; }
+    if (!p) return;
+    LS.set('planilha', p.id);
+    carregarPlanilha(p.id);
+  },
+  trocarPlanilha() {
+    if (E.banco && E.banco.demo) { LS.del('demo'); E.banco = null; E.db = null; E.fase = G.tokenValido() ? 'conectar' : 'entrar'; ir('inicio'); desenhar(); return; }
+    LS.del('planilha'); E.banco = null; E.db = null; E.fase = 'conectar'; E.erro = ''; desenhar();
+  },
+  sair() { G.sair(); LS.del('demo'); LS.del('perfil'); E.perfil = null; E.banco = null; E.db = null; E.fase = 'entrar'; E.erro = ''; ir('inicio'); desenhar(); },
+  async recarregar() {
+    if (E.banco && E.banco.demo) { avisar('Modo demonstração: os dados ficam neste navegador.'); return; }
+    if (E.fase === 'erro') { const id = LS.get('planilha'); if (id) carregarPlanilha(id); return; }
+    await recarregarDados(); avisar('Dados atualizados.');
+  },
+  async renovar() {
+    try { await G.entrar(E.email); } catch (e) { avisar(e.message, true); return; }
+    E.sessaoExpirada = false; await recarregarDados(); desenhar();
+  },
+  escolherPerfil(d) {
+    E.perfil = d.id; LS.set('perfil', d.id);
+    const id = LS.get('planilha');
+    if (!E.db.contas.some(R.ativo) && !(E.banco && E.banco.demo) && !LS.get('primeiro-ok-' + id)) ir('primeiro'); else ir('inicio');
+  },
+  ir(d) { ir(d.v); },
+  mudarMes(d) { E.mes = somaMes(E.mes, Number(d.v)); desenhar(); },
+  alternarOcultar() { E.ocultar = !E.ocultar; LS.set('ocultar', E.ocultar); desenhar(); },
+  filtro(d) { E.filtro = d.v; desenhar(); },
+  concluirPrimeiro() { LS.set('primeiro-ok-' + LS.get('planilha'), true); ir('inicio'); },
+
+  // ---- lançamento
+  novoLancamento() {
+    if (!E.db.contas.some(R.ativo)) { avisar('Cadastre ao menos uma conta antes de lançar.', true); ir('contas'); return; }
+    E.modal = { tipo: 'lancar', form: novoForm() }; desenhar();
+    setTimeout(() => { const v = document.getElementById('valor'); if (v) v.focus(); }, 50);
+  },
+  fecharModal() { E.modal = null; E.modalPai = null; desenhar(); },
+  lancTipo(d) {
+    const f = E.modal.form; f.tipo = d.v;
+    if (d.v === 'receita') { f.categoria = ''; f.dono = donoPadrao(); f.renda = true; }
+    else if (f.categoria && R.porId(E.db.categorias, f.categoria) && R.porId(E.db.categorias, f.categoria).tipo === 'Receita') f.categoria = '';
+    if (d.v === 'despesa' || d.v === 'cartao') f.dono = f.dono || (fam() ? fam().id : donoPadrao());
+    desenhar();
+  },
+  lancData(d) {
+    const f = formAtual(); f.dataModo = d.v;
+    if (d.v === 'hoje') f.data = hojeISO(); else if (d.v === 'ontem') f.data = somaDias(hojeISO(), -1);
+    desenhar();
+  },
+  lancMeio(d) { E.modal.form.meio = d.v; desenhar(); },
+  lancDono(d) { const f = E.modal.form; f.dono = d.id; if (f.tipo === 'receita' && fam() && d.id === fam().id) f.renda = false; else if (f.tipo === 'receita') f.renda = true; desenhar(); },
+  lancRenda() { E.modal.form.renda = !E.modal.form.renda; desenhar(); },
+  lancTransf(d) { const f = E.modal.form; f.transf = d.v; desenhar(); },
+  parcelas(d) { const f = E.modal.form; f.parcelas = Math.max(1, Math.min(48, f.parcelas + Number(d.v))); desenhar(); },
+  abrirSeletor(d) { E.modalPai = E.modal; E.modal = { tipo: 'seletor', campo: d.v }; desenhar(); },
+  fecharSeletor() { E.modal = E.modalPai; E.modalPai = null; desenhar(); },
+  escolher(d) {
+    const campo = E.modal.campo;
+    E.modalPai.form[campo] = d.id;
+    E.modal = E.modalPai; E.modalPai = null; desenhar();
+  },
+  async salvarLancamento() {
+    const f = E.modal.form;
+    const valor = arred(lerValor(f.valor));
+    if (!(valor > 0)) return avisar('Digite o valor.', true);
+    if (f.tipo !== 'transferencia' && !f.desc.trim()) return avisar('Escreva uma descrição.', true);
+    const ok = await salvar(async () => {
+      if (E.modal.editando) await atualizarLancamento(f, valor); else await gravarLancamento(f, valor);
+    });
+    if (ok) {
+      const editou = E.modal && E.modal.editando;
+      E.modal = null; E.modalPai = null;
+      avisar(editou ? 'Alteração salva.' : 'Lançamento salvo.');
+    }
+  },
+  abrirDetalhe(d) { E.modal = { tipo: 'detalhe', id: d.id, k: d.k }; desenhar(); },
+  editarLancamento() {
+    const m = E.modal;
+    if (m.k === 'ren') {
+      const r = R.porId(E.db.rendas, m.id);
+      E.modal = { tipo: 'renda', form: { ...r, valor: String(r.valor).replace('.', ',') } }; desenhar(); return;
+    }
+    const t = R.porId(E.db.transacoes, m.id);
+    const tipo = t.tipo === R.TIPO.fatura || t.tipo === R.TIPO.transf ? 'transferencia' : t.tipo === R.TIPO.receita ? 'receita' : t.cartao ? 'cartao' : 'despesa';
+    E.modal = {
+      tipo: 'lancar', editando: t.id,
+      form: {
+        tipo, valor: String(t.valor).replace('.', ','), data: t.data, dataModo: 'outra', desc: t.desc || '', categoria: t.categoria || '', obs: t.obs || '',
+        conta: t.conta || '', cartao: t.cartao || '', contaDestino: t.contaDestino || '', parcelas: t.totalParcelas || 1, meio: t.meio || 'Pix',
+        dono: t.dono || '', renda: false, transf: t.tipo === R.TIPO.transf ? 'conta' : 'fatura', grupo: t.grupoParc || '',
+      },
+    };
+    desenhar();
+  },
+  excluirLancamento() {
+    const m = E.modal;
+    const t = m.k === 'ren' ? R.porId(E.db.rendas, m.id) : R.porId(E.db.transacoes, m.id);
+    const grupo = m.k !== 'ren' && t.grupoParc && t.totalParcelas > 1 ? E.db.transacoes.filter((x) => x.grupoParc === t.grupoParc) : null;
+    E.modal = {
+      tipo: 'confirmar', titulo: 'Excluir lançamento?', alvo: { k: m.k, id: m.id, grupo: grupo ? t.grupoParc : null },
+      texto: grupo ? `"${t.desc}" tem ${grupo.length} parcelas. Excluir só esta ou todas?` : `"${t.desc || 'Lançamento'}" de ${brl(t.valor)} sai da planilha. Não dá para desfazer.`,
+      opcoes: grupo ? [['confirmarExclusao', 'Só esta parcela', true], ['confirmarExclusaoGrupo', 'Todas as ' + grupo.length + ' parcelas', true]] : [['confirmarExclusao', 'Excluir', true]],
+    };
+    desenhar();
+  },
+  async confirmarExclusao() { await excluir(false); },
+  async confirmarExclusaoGrupo() { await excluir(true); },
+  async alternarConferido() {
+    const t = R.porId(E.db.transacoes, E.modal.id);
+    const ok = await salvar(() => E.banco.atualizar('transacoes', [{ id: t.id, conferido: !t.conferido }]));
+    if (ok) desenhar();
+  },
+
+  // ---- acerto
+  registrarAcerto() {
+    const ac = R.acertoDoMes(E.db, E.mes);
+    if (!ac.resultado) return;
+    const r = ac.resultado;
+    const nome = (id) => R.porId(E.db.pessoas, id).nome;
+    const temDestino = E.banco.temCampo('transacoes', 'contaDestino');
+    E.modal = {
+      tipo: 'confirmar', titulo: 'Registrar o acerto?', alvo: r,
+      texto: `Registra que <strong>${nome(r.de)}</strong> transferiu <strong>${brl(r.valor)}</strong> para <strong>${nome(r.para)}</strong> referente a ${nomeMesAno(E.mes).toLowerCase()}.` +
+        (temDestino ? ` A transferência sai da primeira conta de ${nome(r.de)} e entra na primeira de ${nome(r.para)}; dá para editar depois em Transações.` : ''),
+      opcoes: [['confirmarAcerto', 'Registrar acerto']],
+    };
+    desenhar();
+  },
+  async confirmarAcerto() {
+    const r = E.modal.alvo;
+    const ok = await salvar(async () => {
+      const [a] = await E.banco.inserir('acertos', [{ data: hojeISO(), de: r.de, para: r.para, valor: r.valor, mesRef: E.mes, obs: 'Registrado pelo app' }]);
+      if (E.banco.temCampo('transacoes', 'contaDestino')) {
+        const de = primeiraConta(r.de), para = primeiraConta(r.para);
+        const cde = R.porId(E.db.contas, de), cpara = R.porId(E.db.contas, para);
+        if (cde && cpara && cde.dono === r.de && cpara.dono === r.para) {
+          await E.banco.inserir('transacoes', [{ data: hojeISO(), desc: 'Acerto de ' + nomeMesAno(E.mes).split(' ')[0].toLowerCase(), valor: r.valor, tipo: R.TIPO.transf, meio: 'Pix', conta: de, contaDestino: para, pagou: r.de, dono: r.para, status: 'Confirmado', pago: true, grupoParc: a.id, criadoPor: E.email }]);
+        }
+      }
+      await recarregarDados();
+    });
+    if (ok) { E.modal = null; avisar('Acerto registrado.'); }
+  },
+
+  // ---- contas e cartões
+  novaConta() {
+    const voltar = E.modal && E.modal.tipo === 'seletor' ? null : null;
+    E.modal = { tipo: 'conta', form: { nome: '', dono: donoPadrao(), tipo: 'Conta corrente', banco: '', saldoInicial: '', dataSaldo: hojeISO(), cor: 'Roxo', status: 'Ativo' }, voltar }; E.modalPai = null; desenhar();
+  },
+  editarConta(d) { const c = R.porId(E.db.contas, d.id); E.modal = { tipo: 'conta', form: { ...c, saldoInicial: String(c.saldoInicial || 0).replace('.', ',') } }; desenhar(); },
+  formDono(d) { E.modal.form.dono = d.id; desenhar(); },
+  formPessoa(d) { E.modal.form.pessoa = d.id; const c = primeiraConta(d.id); if (c) E.modal.form.conta = c; desenhar(); },
+  formCor(d) { E.modal.form.cor = d.v; desenhar(); },
+  formDia(d) { const [k, n] = d.v.split(':'); const f = E.modal.form; f[k] = ((Number(f[k]) - 1 + Number(n) + 31) % 31) + 1; desenhar(); },
+  formRendaRef(d) { E.modal.form.rendaRef = d.v; desenhar(); },
+  async salvarConta() {
+    const f = E.modal.form;
+    if (!f.nome.trim()) return avisar('Dê um nome para a conta.', true);
+    const o = { nome: f.nome.trim(), dono: f.dono, tipo: f.tipo, banco: f.banco || '', saldoInicial: arred(lerValor(f.saldoInicial)), dataSaldo: f.dataSaldo || hojeISO(), cor: f.cor, status: f.status || 'Ativo' };
+    const ok = await salvar(() => (f.id ? E.banco.atualizar('contas', [{ id: f.id, ...o }]) : E.banco.inserir('contas', [o])));
+    if (ok) { E.modal = null; avisar('Conta salva.'); }
+  },
+  async arquivarConta() {
+    const f = E.modal.form;
+    const novo = f.status === 'Arquivado' ? 'Ativo' : 'Arquivado';
+    const ok = await salvar(() => E.banco.atualizar('contas', [{ id: f.id, status: novo }]));
+    if (ok) { E.modal = null; avisar(novo === 'Arquivado' ? 'Conta arquivada. O histórico continua.' : 'Conta reativada.'); }
+  },
+  novoCartao() { E.modal = { tipo: 'cartao', form: { nome: '', dono: donoPadrao(), fecha: 28, vence: 5, rendaRef: 'Mês anterior ao vencimento', limite: '', contaPag: primeiraConta(donoPadrao()), cor: 'Roxo', status: 'Ativo' } }; E.modalPai = null; desenhar(); },
+  editarCartao(d) { const c = R.porId(E.db.cartoes, d.id); E.modal = { tipo: 'cartao', form: { ...c, limite: c.limite ? String(c.limite).replace('.', ',') : '' } }; desenhar(); },
+  async salvarCartao() {
+    const f = E.modal.form;
+    if (!f.nome.trim()) return avisar('Dê um nome para o cartão.', true);
+    const o = { nome: f.nome.trim(), dono: f.dono, fecha: f.fecha, vence: f.vence, rendaRef: f.rendaRef, limite: f.limite === '' ? '' : arred(lerValor(f.limite)), contaPag: f.contaPag || '', cor: f.cor, status: f.status || 'Ativo' };
+    const ok = await salvar(() => (f.id ? E.banco.atualizar('cartoes', [{ id: f.id, ...o }]) : E.banco.inserir('cartoes', [o])));
+    if (ok) { E.modal = null; avisar('Cartão salvo.'); }
+  },
+  async arquivarCartao() {
+    const f = E.modal.form;
+    const novo = f.status === 'Arquivado' ? 'Ativo' : 'Arquivado';
+    const ok = await salvar(() => E.banco.atualizar('cartoes', [{ id: f.id, status: novo }]));
+    if (ok) { E.modal = null; avisar(novo === 'Arquivado' ? 'Cartão arquivado. O histórico continua.' : 'Cartão reativado.'); }
+  },
+
+  // ---- rendas
+  novaRenda() { const p = donoPadrao(); E.modal = { tipo: 'renda', form: { pessoa: p, desc: 'Salário', valor: '', data: hojeISO(), conta: primeiraConta(p) } }; desenhar(); },
+  async salvarRenda() {
+    const f = E.modal.form;
+    const valor = arred(lerValor(f.valor));
+    if (!(valor > 0)) return avisar('Digite o valor.', true);
+    const o = { data: f.data || hojeISO(), pessoa: f.pessoa, desc: (f.desc || 'Renda').trim(), valor, conta: f.conta || '' };
+    const ok = await salvar(() => (f.id ? E.banco.atualizar('rendas', [{ id: f.id, ...o }]) : E.banco.inserir('rendas', [o])));
+    if (ok) { E.modal = null; avisar('Renda salva.'); }
+  },
+  async mudarRegra(d) {
+    const f = fam();
+    if (!f) return;
+    const ok = await salvar(() => E.banco.atualizar('pessoas', [{ id: f.id, divisaoPadrao: d.v }]));
+    if (ok) avisar('Regra atualizada para os gastos novos.');
+  },
+
+  // ---- faturas
+  selCartao(d) { E.cartaoSel = d.id; E.faturaSel = null; desenhar(); },
+  selFatura(d) { if (d.id) { E.faturaSel = d.id; desenhar(); } },
+  alterarFechamento(d) { const f = R.porId(E.db.faturas, d.id); E.modal = { tipo: 'fechamento', form: { id: f.id, fechamento: f.fechamento, vencimento: f.vencimento } }; desenhar(); },
+  async salvarFechamento() {
+    const f = E.modal.form;
+    if (!f.fechamento || !f.vencimento) return avisar('Preencha as duas datas.', true);
+    const ok = await salvar(async () => {
+      await E.banco.atualizar('faturas', [{ id: f.id, fechamento: f.fechamento, vencimento: f.vencimento }]);
+      await redistribuirCompras(R.porId(E.db.faturas, f.id));
+    });
+    if (ok) { E.modal = null; avisar('Datas da fatura atualizadas.'); }
+  },
+  pagarFatura(d) {
+    const fat = R.porId(E.db.faturas, d.id);
+    const c = R.porId(E.db.cartoes, fat.cartao);
+    const form = novoForm('transferencia');
+    form.transf = 'fatura'; form.cartao = c.id; form.conta = c.contaPag || primeiraConta(c.dono);
+    form.valor = String(R.totalFatura(E.db, fat.id)).replace('.', ',');
+    form.desc = 'Pagamento da fatura ' + c.nome;
+    form.faturaAlvo = fat.id;
+    E.modal = { tipo: 'lancar', form }; desenhar();
+  },
+};
+
+// ------------------------------------------------------- gravações
+async function garantirFatura(cartao, data, deslocamento, criadas) {
+  const db = E.db;
+  const f = R.faturaPara({ ...db, faturas: [...db.faturas, ...criadas] }, cartao, data, deslocamento);
+  if (f.id) return f.id;
+  const [nova] = await E.banco.inserir('faturas', [{ cartao: cartao.id, competencia: f.competencia, fechamento: f.fechamento, vencimento: f.vencimento, mesRenda: f.mesRenda, status: 'Aberta', conferida: false }]);
+  criadas.push(nova);
+  return nova.id;
+}
+
+async function gravarLancamento(f, valor) {
+  const db = E.db;
+  const famId = fam() ? fam().id : '';
+  const regra = (fam() || {}).divisaoPadrao || 'Proporcional à renda';
+  const futuro = f.data > hojeISO();
+  const base = { data: f.data, desc: f.desc.trim(), obs: f.obs || '', criadoPor: E.email, status: futuro ? 'Previsto' : 'Confirmado' };
+
+  if (f.tipo === 'despesa') {
+    const c = R.porId(db.contas, f.conta);
+    if (!c) throw new Error('Escolha a conta de onde saiu o dinheiro.');
+    await E.banco.inserir('transacoes', [{ ...base, valor, tipo: R.TIPO.despesa, categoria: f.categoria, meio: f.meio, conta: c.id, dono: f.dono, pagou: c.dono, divisao: f.dono === famId ? regra : '', pago: !futuro, dataPag: futuro ? '' : f.data }]);
+  } else if (f.tipo === 'cartao') {
+    const c = R.porId(db.cartoes, f.cartao);
+    if (!c) throw new Error('Escolha o cartão.');
+    const n = f.parcelas;
+    const valores = R.valoresParcelas(valor, n);
+    const grupo = n > 1 ? 'PAR-' + Date.now().toString(36).toUpperCase() : '';
+    const criadas = [];
+    const linhas = [];
+    for (let k = 0; k < n; k++) {
+      const fatura = await garantirFatura(c, f.data, k, criadas);
+      linhas.push({ ...base, status: 'Confirmado', valor: valores[k], tipo: R.TIPO.despesa, categoria: f.categoria, meio: 'Crédito', cartao: c.id, fatura, parcela: n > 1 ? k + 1 : '', totalParcelas: n > 1 ? n : '', grupoParc: grupo, dono: f.dono, pagou: c.dono, divisao: f.dono === famId ? regra : '', pago: false });
+    }
+    await E.banco.inserir('transacoes', linhas);
+  } else if (f.tipo === 'receita') {
+    const c = R.porId(db.contas, f.conta);
+    if (!c) throw new Error('Escolha a conta em que o dinheiro caiu.');
+    if (f.renda && f.dono !== famId) {
+      await E.banco.inserir('rendas', [{ data: f.data, pessoa: f.dono, desc: f.desc.trim(), valor, conta: c.id }]);
+    } else {
+      await E.banco.inserir('transacoes', [{ ...base, valor, tipo: R.TIPO.receita, categoria: f.categoria, meio: 'Pix', conta: c.id, dono: f.dono, pagou: c.dono, divisao: f.dono === famId ? regra : '', pago: true }]);
+    }
+  } else {
+    const c = R.porId(db.contas, f.conta);
+    if (!c) throw new Error('Escolha a conta de onde sai o dinheiro.');
+    if (f.transf === 'fatura') {
+      const k = R.porId(db.cartoes, f.cartao);
+      if (!k) throw new Error('Escolha o cartão.');
+      const fat = f.faturaAlvo ? R.porId(db.faturas, f.faturaAlvo) : R.faturaAtual(db, k, hojeISO());
+      if (!fat) throw new Error('Este cartão não tem fatura em aberto.');
+      await E.banco.inserir('transacoes', [{ ...base, status: 'Confirmado', desc: base.desc || 'Pagamento da fatura ' + k.nome, valor, tipo: R.TIPO.fatura, meio: 'Pix', conta: c.id, cartao: k.id, fatura: fat.id, pagou: c.dono, dono: k.dono, pago: true, dataPag: f.data }]);
+      const pago = arred(E.db.transacoes.filter((t) => t.tipo === R.TIPO.fatura && t.fatura === fat.id).reduce((s, t) => s + t.valor, 0));
+      if (pago >= R.totalFatura(E.db, fat.id) - 0.005) await E.banco.atualizar('faturas', [{ id: fat.id, status: 'Paga', dataPag: f.data, pagoPor: c.dono }]);
+    } else {
+      if (!E.banco.temCampo('transacoes', 'contaDestino')) throw new Error('A planilha precisa da coluna "Conta de destino (ID)". Rode o script de montagem (versão 1.7) na planilha e tente de novo.');
+      const d = R.porId(db.contas, f.contaDestino);
+      if (!d) throw new Error('Escolha a conta que recebe.');
+      if (d.id === c.id) throw new Error('As contas de origem e destino são a mesma.');
+      await E.banco.inserir('transacoes', [{ ...base, desc: base.desc || 'Transferência', valor, tipo: R.TIPO.transf, meio: 'Pix', conta: c.id, contaDestino: d.id, pagou: c.dono, dono: d.dono, pago: true, dataPag: f.data }]);
+    }
+  }
+  if (!E.banco.demo) await recarregarDados();
+}
+
+async function atualizarLancamento(f, valor) {
+  const db = E.db;
+  const t = R.porId(db.transacoes, E.modal.editando);
+  const famId = fam() ? fam().id : '';
+  const comuns = { desc: f.desc.trim() || t.desc, categoria: f.categoria, dono: f.dono, obs: f.obs || '' };
+  if (t.grupoParc && t.totalParcelas > 1) {
+    // parcelado: muda descrição, categoria, dono e observação de todas as parcelas
+    const grupo = db.transacoes.filter((x) => x.grupoParc === t.grupoParc);
+    await E.banco.atualizar('transacoes', grupo.map((x) => ({ id: x.id, ...comuns, divisao: f.dono === famId ? (x.divisao || fam().divisaoPadrao) : '' })));
+  } else {
+    const o = { id: t.id, ...comuns, valor, data: f.data, divisao: f.dono === famId ? (t.divisao || (fam() || {}).divisaoPadrao || '') : '' };
+    if (f.tipo === 'cartao') {
+      const c = R.porId(db.cartoes, f.cartao);
+      o.cartao = c.id; o.pagou = c.dono; o.fatura = await garantirFatura(c, f.data, 0, []);
+    } else if (f.tipo === 'despesa' || f.tipo === 'receita') {
+      const c = R.porId(db.contas, f.conta);
+      o.conta = c.id; o.pagou = c.dono;
+      if (f.tipo === 'despesa') o.meio = f.meio;
+    } else if (f.tipo === 'transferencia') {
+      o.conta = f.conta; o.pagou = (R.porId(db.contas, f.conta) || {}).dono || '';
+      if (t.tipo === R.TIPO.transf) { o.contaDestino = f.contaDestino; o.dono = (R.porId(db.contas, f.contaDestino) || {}).dono || ''; }
+      else o.dono = t.dono;
+    }
+    o.status = f.data > hojeISO() ? 'Previsto' : 'Confirmado';
+    await E.banco.atualizar('transacoes', [o]);
+  }
+  if (!E.banco.demo) await recarregarDados();
+}
+
+async function excluir(todoGrupo) {
+  const alvo = E.modal.alvo;
+  const ok = await salvar(async () => {
+    if (alvo.k === 'ren') { await E.banco.excluir('rendas', [alvo.id]); return; }
+    const t = R.porId(E.db.transacoes, alvo.id);
+    const ids = todoGrupo && alvo.grupo ? E.db.transacoes.filter((x) => x.grupoParc === alvo.grupo).map((x) => x.id) : [alvo.id];
+    await E.banco.excluir('transacoes', ids);
+    if (t && t.tipo === R.TIPO.fatura && t.fatura) {
+      const fat = R.porId(E.db.faturas, t.fatura);
+      if (fat && fat.status === 'Paga') await E.banco.atualizar('faturas', [{ id: fat.id, status: 'Aberta', dataPag: '' }]);
+    }
+    // acerto registrado pelo app: apaga junto a linha da aba Acertos
+    if (t && t.grupoParc && /^ACE-/.test(t.grupoParc)) await E.banco.excluir('acertos', [t.grupoParc]);
+  });
+  if (ok) { E.modal = null; avisar('Excluído.'); }
+}
+
+// Depois de mudar as datas de uma fatura: compras à vista (ou 1ª parcela)
+// da fatura e da vizinha mudam de fatura se a data pedir.
+async function redistribuirCompras(fat) {
+  const db = E.db;
+  const c = R.porId(db.cartoes, fat.cartao);
+  const lista = R.faturasDoCartao(db, c.id);
+  const i = lista.findIndex((x) => x.id === fat.id);
+  const vizinhas = [lista[i - 1], lista[i], lista[i + 1]].filter(Boolean).map((x) => x.id);
+  const mudar = [];
+  const criadas = [];
+  for (const t of db.transacoes) {
+    if (!vizinhas.includes(t.fatura) || !R.ehGasto(t) || (t.totalParcelas > 1 && t.parcela > 1)) continue;
+    const certa = await garantirFatura(c, t.data, 0, criadas);
+    if (certa !== t.fatura) mudar.push({ id: t.id, fatura: certa });
+  }
+  if (mudar.length) await E.banco.atualizar('transacoes', mudar);
+  if (!E.banco.demo) await recarregarDados();
+}
+
+// ------------------------------------------------------------ eventos
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-a]');
+  if (!el || el.getAttribute('aria-disabled') === 'true') return;
+  const fn = A[el.dataset.a];
+  if (!fn) return;
+  ev.preventDefault();
+  fn(el.dataset);
+});
+document.addEventListener('input', (ev) => {
+  const el = ev.target;
+  const campo = el.dataset && el.dataset.campo;
+  const f = campo && formAtual();
+  if (f) f[campo] = el.value;
+});
+document.addEventListener('change', (ev) => {
+  const el = ev.target;
+  const campo = el.dataset && el.dataset.campo;
+  const f = campo && formAtual();
+  if (!f) return;
+  f[campo] = el.value;
+  if (el.tagName === 'SELECT' || el.type === 'date' || campo === 'valor') desenhar();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && E.modal) { E.modal.tipo === 'seletor' ? A.fecharSeletor() : A.fecharModal(); }
+  const tag = (ev.target.tagName || '').toLowerCase();
+  if ((ev.key === 'n' || ev.key === 'N') && !E.modal && E.fase === 'pronto' && E.perfil && !['input', 'textarea', 'select'].includes(tag) && !ev.ctrlKey && !ev.metaKey) { ev.preventDefault(); A.novoLancamento(); }
+  if (ev.key === 'Enter' && E.modal && E.modal.tipo === 'lancar' && tag === 'input' && ev.target.dataset.campo !== 'obs') { ev.preventDefault(); ev.target.blur(); }
+});
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* sem cache offline */ });
+}
+
+iniciar();
