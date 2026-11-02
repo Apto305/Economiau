@@ -37,6 +37,15 @@ export function mesFechaPadrao(cartao, data) {
 export const faturasDoCartao = (db, cartaoId) =>
   db.faturas.filter((f) => f.cartao === cartaoId).sort((a, b) => (a.fechamento < b.fechamento ? -1 : 1));
 
+// Primeiro dia de compras de uma fatura: o fechamento da fatura anterior,
+// se ela for do mês anterior; senão, o dia de fechamento padrão do cartão
+// no mês anterior (não deixa uma fatura "engolir" meses sem fatura criada).
+export function inicioFatura(cartao, f, anterior) {
+  const mesAnt = somaMes(mesDe(f.fechamento), -1);
+  if (anterior && mesDe(anterior.fechamento) === mesAnt) return anterior.fechamento;
+  return dataNoMes(mesAnt, cartao.fecha);
+}
+
 // Encontra a fatura existente em que a compra cai, respeitando datas de
 // fechamento editadas fatura a fatura. Se não existir, devolve os dados
 // de uma fatura nova (sem id) para ser criada.
@@ -46,8 +55,8 @@ export function faturaPara(db, cartao, data, deslocamento = 0) {
   let base = null;
   for (let i = 0; i < lista.length; i++) {
     const f = lista[i];
-    const anterior = lista[i - 1];
-    if (data < f.fechamento && (!anterior || data >= anterior.fechamento)) { base = f; break; }
+    if (data < inicioFatura(cartao, f, lista[i - 1]) || data >= f.fechamento) continue;
+    base = f; break;
   }
   let mesFecha = base ? mesDe(base.fechamento) : mesFechaPadrao(cartao, data);
   if (base && deslocamento === 0) return base;
@@ -368,4 +377,32 @@ export function todasAsTags(db) {
   const s = new Set();
   [...db.transacoes, ...db.rendas, ...(db.recorrencias || [])].forEach((t) => tagsDe(t).forEach((x) => s.add(x)));
   return [...s].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+// Compras no cartão que ficaram numa fatura que não cobre a data da compra
+// (erro da versão 1.0 a 1.4). Devolve [{ t, certa }] com a fatura certa
+// (sem id quando ela ainda precisa ser criada). Parcelas acompanham a 1ª.
+export function comprasNaFaturaErrada(db) {
+  const out = [];
+  const grupos = {};
+  db.transacoes.forEach((t) => {
+    if (!t.cartao || !t.fatura || !(t.tipo === TIPO.despesa || t.tipo === TIPO.estorno)) return;
+    if (t.grupoParc && t.totalParcelas > 1) (grupos[t.grupoParc] = grupos[t.grupoParc] || []).push(t);
+    else {
+      const c = porId(db.cartoes, t.cartao);
+      if (!c) return;
+      const certa = faturaPara(db, c, t.data, 0);
+      if (certa.id !== t.fatura) out.push({ t, certa, k: 0 });
+    }
+  });
+  Object.values(grupos).forEach((lista) => {
+    lista.sort((a, b) => a.parcela - b.parcela);
+    const c = porId(db.cartoes, lista[0].cartao);
+    if (!c) return;
+    lista.forEach((t) => {
+      const certa = faturaPara(db, c, t.data, (t.parcela || 1) - 1);
+      if (certa.id !== t.fatura) out.push({ t, certa, k: (t.parcela || 1) - 1 });
+    });
+  });
+  return out;
 }

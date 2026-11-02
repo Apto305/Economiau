@@ -117,6 +117,27 @@ async function carregarPlanilha(id) {
   E.fase = 'pronto'; E.erro = ''; E.sessaoExpirada = false;
   if (!E.db.contas.some(R.ativo) && !LS.get('primeiro-ok-' + id)) { if (E.perfil) ir('primeiro'); }
   desenhar();
+  corrigirFaturas();
+}
+
+// Conserta compras no cartão que ficaram numa fatura que não cobre a data
+// (erro das versões 1.0 a 1.4 quando a compra era lançada depois de uma mais nova)
+async function corrigirFaturas() {
+  const erradas = R.comprasNaFaturaErrada(E.banco.db);
+  if (!erradas.length) return;
+  try {
+    const criadas = [];
+    const mudar = [];
+    for (const { t, k } of erradas) {
+      const c = R.porId(E.banco.db.cartoes, t.cartao);
+      const id = await garantirFatura(c, t.data, k, criadas);
+      if (id !== t.fatura) mudar.push({ id: t.id, fatura: id });
+    }
+    if (mudar.length) await E.banco.atualizar('transacoes', mudar);
+    if (!E.banco.demo) await E.banco.carregar();
+    E.db = E.banco.db; E.rev++;
+    if (mudar.length) avisar(mudar.length === 1 ? 'Corrigi a fatura de 1 compra lançada com data antiga.' : 'Corrigi a fatura de ' + mudar.length + ' compras lançadas com data antiga.');
+  } catch (e) { tratarErro(e); }
 }
 
 // Recarrega os dados depois de uma escrita (garante números de linha certos)

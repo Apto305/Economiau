@@ -458,7 +458,7 @@ export function telaFixas(E) {
     const pend = prev.some((p) => p.recorrencia === r.id);
     const ehEntrada = r.tipo === 'Renda' || r.tipo === 'Receita';
     return `<button class="item" data-a="editarFixa" data-id="${r.id}" ${R.ativo(r) ? '' : 'style="opacity:.55"'}><span class="principal-txt"><span class="titulo">${esc(r.desc)}</span><span class="sub">Todo dia ${r.dia}${r.fim ? ' até ' + mesCurto(mesDe(r.fim)) + '/' + r.fim.slice(0, 4) : ''} · ${esc(origem || '')} · ${esc(A.nome(r.dono))}${r.tipo === 'Renda' ? ' · renda' : ''}</span></span>
-      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="valor ${ehEntrada ? 'rec' : ''}">${sens(brl(r.valor))}</span>${R.ativo(r) ? `<span class="pill ${pend ? 'aviso' : 'ok'}">${pend ? 'falta lançar' : 'lançada'}</span>` : '<span class="pill neutra">encerrada</span>'}</span></button>`;
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="valor ${ehEntrada ? 'rec' : ''}">${sens((ehEntrada ? '+ ' : '− ') + brl(r.valor))}</span>${R.ativo(r) ? `<span class="pill ${pend ? 'aviso' : 'ok'}">${pend ? 'falta lançar' : 'lançada'}</span>` : '<span class="pill neutra">encerrada</span>'}</span></button>`;
   };
   const corpo = `${v18 ? '' : '<div class="aviso-caixa" style="margin-bottom:12px">Rode o script da planilha versão 1.8 para criar contas fixas.</div>'}
     <p class="muted" style="font-size:13.5px">Para criar uma conta fixa, faça um lançamento normal e ligue "Repetir todo mês". Ela aparece como prevista nos meses seguintes até alguém confirmar.</p>
