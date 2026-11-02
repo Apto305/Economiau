@@ -1,9 +1,9 @@
 // Service worker: guarda a "casca" do app para abrir rápido e sem internet.
 // Os dados vêm sempre da planilha (não são guardados aqui).
-const VERSAO = 'economiau-v1.2.0';
+const VERSAO = 'economiau-v1.3.0';
 const ARQUIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/config.js', 'js/dados.js', 'js/google.js', 'js/icones.js', 'js/regras.js', 'js/telas.js', 'js/util.js',
+  'js/app.js', 'js/config.js', 'js/dados.js', 'js/google.js', 'js/icones.js', 'js/regras.js', 'js/telas.js', 'js/telas2.js', 'js/invest.js', 'js/util.js',
   'assets/davinci-corpo.webp', 'assets/seringa-corpo.webp', 'assets/davinci-rosto.webp', 'assets/seringa-rosto.webp', 'assets/familia-rosto.webp',
   'assets/davinci-despesa.webp', 'assets/davinci-receita.webp', 'assets/seringa-despesa.webp', 'assets/seringa-receita.webp',
   'assets/familia-despesa.webp', 'assets/familia-receita.webp', 'assets/icone-192.png', 'assets/favicon.png',

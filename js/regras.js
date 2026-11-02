@@ -112,7 +112,7 @@ export function rendaDoMes(db, mes) {
 export function entradasDoMes(db, mes, pessoaId) {
   let divisao = 0, outras = 0;
   db.rendas.forEach((r) => { if (r.status !== 'Previsto' && r.pessoa === pessoaId && mesDe(r.data) === mes) divisao += r.valor; });
-  db.transacoes.forEach((t) => { if (t.tipo === TIPO.receita && confirmado(t) && t.dono === pessoaId && mesDe(t.data) === mes) outras += t.valor; });
+  db.transacoes.forEach((t) => { if (t.tipo === TIPO.receita && !ehAjuste(t) && confirmado(t) && t.dono === pessoaId && mesDe(t.data) === mes) outras += t.valor; });
   return { divisao: arred(divisao), outras: arred(outras), total: arred(divisao + outras) };
 }
 
@@ -180,7 +180,9 @@ export function parteDe(db, t, pessoaId) {
   return t.dono === pessoaId ? sinal * t.valor : 0;
 }
 
-export const ehGasto = (t) => t.tipo === TIPO.despesa || t.tipo === TIPO.estorno;
+// Ajuste de saldo feito na conferência: mexe no saldo da conta, mas não é gasto nem receita
+export const ehAjuste = (t) => t.grupoParc === 'AJUSTE';
+export const ehGasto = (t) => (t.tipo === TIPO.despesa || t.tipo === TIPO.estorno) && !ehAjuste(t);
 
 // Gastos do mês vistos por um perfil: pessoa = gastos dela + parte dela nos
 // da família; Família = só os gastos da família.
@@ -224,6 +226,11 @@ export function saldoConta(db, conta, ate = '9999-12-31', incluirPrevistos = fal
     if (t.tipo === TIPO.transf && t.contaDestino === conta.id) s += t.valor;
   });
   db.rendas.forEach((r) => { if (r.conta === conta.id && r.data >= desde && r.data <= ate) s += r.valor; });
+  (db.movsInv || []).forEach((m) => {
+    if (m.conta !== conta.id || m.data < desde || m.data > ate) return;
+    if (m.tipo === 'Aporte') s -= m.valor;
+    else if (m.tipo === 'Resgate') s += (m.liquido !== '' && m.liquido !== undefined && m.liquido !== null) ? Number(m.liquido) : m.valor;
+  });
   return arred(s);
 }
 
@@ -259,6 +266,7 @@ export function acertoDoMes(db, mes) {
     }
     if (mesDe(t.data) !== mes) return;
     if (t.tipo === TIPO.receita) {
+      if (ehAjuste(t)) return;
       const recebeu = t.pagou || donoDaConta(db, t.conta);
       if (fam && t.dono === fam.id) {
         const f = partesFamilia(db, t, mes);

@@ -30,6 +30,7 @@ const P = {
   aviso: 'M12 3l9.5 17h-19zM12 10v4M12 17.5v.01',
   repetir: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3',
   trocar: 'M8 9l4-4 4 4M8 15l4 4 4-4',
+  investir: 'M3 17l6-6 4 4 8-8M15 7h6v6',
 };
 export const ic = (nome, tam = 20, extra = '') =>
   `<svg width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}><path d="${P[nome] || ''}"/></svg>`;

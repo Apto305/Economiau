@@ -4,6 +4,8 @@ import * as G from './google.js';
 import { BancoPlanilha, BancoDemo } from './dados.js';
 import * as R from './regras.js';
 import * as T from './telas.js';
+import * as T2 from './telas2.js';
+import * as I from './invest.js';
 import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero, dataNoMes } from './util.js';
 
 const LS = {
@@ -16,7 +18,8 @@ const E = {
   fase: 'iniciando', erro: '', msgCarregando: '', email: LS.get('email', ''), banco: null, db: null,
   perfil: LS.get('perfil'), rota: 'inicio', mes: mesDe(hojeISO()), filtros: { ...T.FILTROS_PADRAO }, modal: null, modalPai: null,
   ocultar: LS.get('ocultar', false), toast: null, salvando: false, sessaoExpirada: false, versao: CONFIG.versaoApp,
-  cartaoSel: null, faturaSel: null,
+  cartaoSel: null, faturaSel: null, rev: 0,
+  confFatura: null, saldoBanco: {}, contasOk: LS.get('contasOk', {}),
 };
 window.__economiau = E; // ajuda a depurar pelo console
 
@@ -35,7 +38,7 @@ function desenhar() {
   else if (E.fase === 'erro') html = T.telaErro(E);
   else if (E.rota === 'perfis' || !E.perfil) html = T.telaPerfis(E);
   else {
-    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas };
+    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos };
     html = (telas[E.rota] || T.telaInicio)(E) + T.modal(E);
   }
   raiz.innerHTML = html + T.toast(E);
@@ -118,7 +121,7 @@ async function carregarPlanilha(id) {
 
 // Recarrega os dados depois de uma escrita (garante números de linha certos)
 async function recarregarDados() {
-  try { E.db = await E.banco.carregar(); } catch (e) { tratarErro(e); }
+  try { E.db = await E.banco.carregar(); E.rev++; } catch (e) { tratarErro(e); }
 }
 
 function tratarErro(e) {
@@ -132,6 +135,7 @@ async function salvar(fn) {
   try { await fn(); } catch (e) { E.salvando = false; if (E.banco) E.db = E.banco.db; tratarErro(e); return false; }
   E.salvando = false;
   E.db = E.banco.db; // o motor pode ter recarregado tudo (ex.: depois de excluir)
+  E.rev++;
   return true;
 }
 
@@ -221,7 +225,7 @@ const A = {
     E.modal = { tipo: 'lancar', form: novoForm((d && d.v) || 'despesa') }; E.modalPai = null; desenhar();
     setTimeout(() => { const v = document.getElementById('valor'); if (v) v.focus(); }, 50);
   },
-  fecharModal() { E.modal = null; E.modalPai = null; desenhar(); },
+  fecharModal() { if (E.modalPai && E.modal && E.modal.tipo !== 'lancar') { E.modal = E.modalPai; E.modalPai = null; } else { E.modal = null; E.modalPai = null; } desenhar(); },
   lancTipo(d) {
     const f = E.modal.form; f.tipo = d.v;
     if (d.v === 'receita') { f.categoria = ''; f.dono = donoPadrao(); f.renda = true; }
@@ -258,6 +262,126 @@ const A = {
     const ok = await salvar(() => E.banco.atualizar('recorrencias', [{ id: rec, pulados: lista.sort().join(', ') }]));
     if (ok) { E.modal = null; avisar('Mês pulado.'); }
   },
+  // ---- conferência
+  abrirConfFatura(d) { E.confFatura = d.id; desenhar(); window.scrollTo(0, 0); },
+  fecharConfFatura() { E.confFatura = null; desenhar(); },
+  async confCompra(d) {
+    const t = R.porId(E.db.transacoes, d.id);
+    const ok = await salvar(() => E.banco.atualizar('transacoes', [{ id: t.id, conferido: !t.conferido }]));
+    if (ok) desenhar();
+  },
+  async marcarTodasCompras(d) {
+    const f = R.porId(E.db.faturas, d.id);
+    const lista = T2.comprasDaFatura(E.db, f).filter((t) => !t.conferido);
+    if (!lista.length) return;
+    const ok = await salvar(() => E.banco.atualizar('transacoes', lista.map((t) => ({ id: t.id, conferido: true }))));
+    if (ok) desenhar();
+  },
+  async concluirFatura(d) {
+    const ok = await salvar(() => E.banco.atualizar('faturas', [{ id: d.id, conferida: true }]));
+    if (ok) avisar('Fatura conferida.');
+  },
+  async desconferirFatura(d) {
+    const ok = await salvar(() => E.banco.atualizar('faturas', [{ id: d.id, conferida: false }]));
+    if (ok) desenhar();
+  },
+  lancarNaFatura(d) {
+    const f = R.porId(E.db.faturas, d.id);
+    const form = novoForm('cartao');
+    form.cartao = f.cartao;
+    const hoje = hojeISO();
+    form.data = hoje < f.fechamento ? hoje : somaDias(f.fechamento, -1);
+    form.dataModo = 'outra';
+    E.modal = { tipo: 'lancar', form }; desenhar();
+  },
+  contaBate(d) { E.contasOk[d.id + ':' + E.mes] = true; LS.set('contasOk', E.contasOk); desenhar(); },
+  async ajustarSaldo(d) {
+    const c = R.porId(E.db.contas, d.id);
+    const app = R.saldoConta(E.db, c);
+    const banco = arred(lerValor(E.saldoBanco[d.id]));
+    const dif = arred(banco - app);
+    if (Math.abs(dif) < 0.005) return;
+    const ok = await salvar(async () => {
+      await E.banco.inserir('transacoes', [{ data: hojeISO(), desc: 'Ajuste de saldo', valor: Math.abs(dif), tipo: dif > 0 ? R.TIPO.receita : R.TIPO.despesa, meio: 'Pix', conta: c.id, dono: c.dono, pagou: c.dono, status: 'Confirmado', pago: true, conferido: true, grupoParc: 'AJUSTE', obs: 'Ajuste feito na conferência: banco ' + brl(banco) + ', app ' + brl(app), criadoPor: E.email }]);
+      if (!E.banco.demo) await E.banco.carregar();
+    });
+    if (ok) { E.contasOk[d.id + ':' + E.mes] = true; LS.set('contasOk', E.contasOk); avisar('Saldo ajustado.'); }
+  },
+
+  // ---- investimentos
+  abrirInvest(d) { E.modal = { tipo: 'invest', id: d.id }; desenhar(); },
+  novoInvest() {
+    const p = donoPadrao();
+    E.modal = { tipo: 'investForm', form: { nome: '', emissor: '', tipo: 'CDB', titular: E.perfil || p, indexador: 'CDI', taxa: '100', dataAplic: hojeISO(), vencimento: '', liquidez: 'Diária', isento: 'Não', valor: '', conta: primeiraConta(E.perfil && !ehFamilia(E.perfil) ? E.perfil : p) } };
+    desenhar();
+  },
+  editarInvest(d) {
+    const i = R.porId(E.db.investimentos, d.id);
+    E.modal = { tipo: 'investForm', editando: i.id, form: { ...i, taxa: String(i.taxa).replace('.', ','), isento: i.isento || (I.ehIsento(i) ? 'Sim' : 'Não') } };
+    desenhar();
+  },
+  investTitular(d) { E.modal.form.titular = d.id; if (!ehFamilia(d.id)) E.modal.form.conta = primeiraConta(d.id) || E.modal.form.conta; desenhar(); },
+  investIsento() { const f = E.modal.form; f.isento = f.isento === 'Sim' ? 'Não' : 'Sim'; desenhar(); },
+  async salvarInvest() {
+    const f = E.modal.form;
+    if (!f.nome.trim()) return avisar('Dê um nome para o investimento.', true);
+    const fixo = T2.indexadorFixo(f.tipo);
+    const o = { nome: f.nome.trim(), emissor: (f.emissor || '').trim(), tipo: f.tipo, titular: f.titular, indexador: fixo || f.indexador, taxa: lerValor(f.taxa), dataAplic: f.dataAplic || hojeISO(), vencimento: f.vencimento || '', liquidez: f.liquidez, isento: ['LCI', 'LCA', 'Poupança'].includes(f.tipo) ? 'Sim' : f.isento };
+    const editando = E.modal.editando;
+    const valor = arred(lerValor(f.valor));
+    const ok = await salvar(async () => {
+      if (editando) { await E.banco.atualizar('investimentos', [{ id: editando, ...o }]); return; }
+      const [inv] = await E.banco.inserir('investimentos', [{ ...o, status: 'Ativo' }]);
+      if (valor > 0) await E.banco.inserir('movsInv', [{ investimento: inv.id, data: o.dataAplic, tipo: 'Aporte', valor, conta: f.conta || '', obs: '' }]);
+    });
+    if (ok) { E.modal = editando ? { tipo: 'invest', id: editando } : null; avisar(editando ? 'Investimento atualizado.' : 'Investimento salvo.'); }
+  },
+  async arquivarInvest(d) {
+    const i = R.porId(E.db.investimentos, d.id);
+    const novo = i.status === 'Arquivado' ? 'Ativo' : 'Arquivado';
+    const ok = await salvar(() => E.banco.atualizar('investimentos', [{ id: i.id, status: novo }]));
+    if (ok) { E.modal = null; avisar(novo === 'Arquivado' ? 'Investimento arquivado.' : 'Investimento reativado.'); }
+  },
+  novoMov(d) {
+    const i = R.porId(E.db.investimentos, E.modal.id);
+    E.modalPai = E.modal;
+    E.modal = { tipo: 'mov', form: { investimento: i.id, tipo: d.v, valor: '', data: hojeISO(), conta: primeiraConta(ehFamilia(i.titular) ? eu() : i.titular) } };
+    desenhar();
+  },
+  resgateTotal() { const f = E.modal.form; const r = T2.calcInvest(E).res[f.investimento]; f.valor = valorTxt(r.liquido); desenhar(); },
+  async salvarMov() {
+    const f = E.modal.form;
+    const valor = arred(lerValor(f.valor));
+    if (!(valor > 0)) return avisar('Digite o valor.', true);
+    const inv = R.porId(E.db.investimentos, f.investimento);
+    let total = false;
+    const ok = await salvar(async () => {
+      if (f.tipo === 'Aporte') {
+        await E.banco.inserir('movsInv', [{ investimento: inv.id, data: f.data, tipo: 'Aporte', valor, conta: f.conta || '' }]);
+        return;
+      }
+      const r = T2.calcInvest(E).res[inv.id];
+      const fr = Math.min(1, valor / r.liquido);
+      total = fr >= 0.999;
+      const bruto = arred(total ? r.bruto : r.bruto * fr);
+      const temLiq = E.banco.temCampo('movsInv', 'liquido');
+      await E.banco.inserir('movsInv', [{ investimento: inv.id, data: f.data, tipo: 'Resgate', valor: temLiq ? bruto : valor, conta: f.conta || '', obs: temLiq ? '' : 'Valor líquido recebido', ...(temLiq ? { liquido: valor } : {}) }]);
+      if (total) await E.banco.atualizar('investimentos', [{ id: inv.id, status: 'Arquivado' }]);
+    });
+    if (ok) { E.modal = total ? null : { tipo: 'invest', id: inv.id }; E.modalPai = null; avisar(total ? 'Resgate total registrado.' : f.tipo === 'Aporte' ? 'Aporte registrado.' : 'Resgate registrado.'); }
+  },
+  excluirMov(d) {
+    const mv = R.porId(E.db.movsInv, d.id);
+    E.modalPai = E.modal;
+    E.modal = { tipo: 'confirmar', titulo: 'Excluir movimentação?', alvo: { id: d.id, inv: mv.investimento }, texto: `${mv.tipo} de ${brl(mv.valor)} em ${mv.data.split('-').reverse().join('/')}. Não dá para desfazer.`, opcoes: [['confirmarExcluirMov', 'Excluir', true]] };
+    desenhar();
+  },
+  async confirmarExcluirMov() {
+    const { id, inv } = E.modal.alvo;
+    const ok = await salvar(() => E.banco.excluir('movsInv', [id]));
+    if (ok) { E.modal = { tipo: 'invest', id: inv }; E.modalPai = null; avisar('Movimentação excluída.'); }
+  },
+
   salvarParcelaUma() { E.modal = E.modalPai; E.modalPai = null; E.modal.escopo = 'uma'; A.salvarLancamento(); },
   salvarParcelaProximas() { E.modal = E.modalPai; E.modalPai = null; E.modal.escopo = 'proximas'; A.salvarLancamento(); },
   tagTirar(d) { const f = formAtual(); f.tags = f.tags.filter((x) => x !== d.v); desenhar(); },
@@ -676,6 +800,8 @@ document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (!el.dataset) return;
   if (el.dataset.filtro === 'busca') { E.filtros.busca = el.value; return; }
+  if (el.dataset.saldoBanco) { el.value = mascarar(el.value, true); E.saldoBanco[el.dataset.saldoBanco] = el.value; return; }
+  if (el.dataset.totalBanco) { el.value = mascarar(el.value, false); return; }
   if (el.dataset.mascara === 'dinheiro') {
     const novo = mascarar(el.value, !!el.dataset.negativo);
     if (novo !== el.value) { el.value = novo; try { el.setSelectionRange(novo.length, novo.length); } catch (e) { /* ok */ } }
@@ -690,13 +816,25 @@ document.addEventListener('change', (ev) => {
   const el = ev.target;
   if (!el.isConnected) return; // campo que acabou de ser redesenhado
   if (el.dataset && el.dataset.filtro) { E.filtros[el.dataset.filtro] = el.value; desenhar(); return; }
+  if (el.dataset && el.dataset.saldoBanco) { setTimeout(desenhar, 0); return; }
+  if (el.dataset && el.dataset.totalBanco) {
+    const id = el.dataset.totalBanco;
+    const v = el.value === '' ? '' : arred(lerValor(el.value));
+    salvar(() => E.banco.atualizar('faturas', [{ id, totalBanco: v }])).then((ok) => { if (ok) setTimeout(desenhar, 0); });
+    return;
+  }
   const campo = el.dataset && el.dataset.campo;
   const f = campo && formAtual();
   if (!f) return;
   f[campo] = el.value;
+  if (E.modal && E.modal.tipo === 'investForm' && campo === 'tipo') {
+    const fixo = T2.indexadorFixo(el.value);
+    if (fixo) f.indexador = fixo;
+    if (['LCI', 'LCA', 'Poupança'].includes(el.value)) f.isento = 'Sim';
+  }
   if (el.type === 'date') { el.dataset.mudou = '1'; return; } // redesenha ao sair do campo (digitar no PC)
   // espera o foco ir para o próximo campo antes de redesenhar (senão o toque no próximo campo se perde)
-  if (el.tagName === 'SELECT' || campo === 'valor' || campo === 'tagNova') setTimeout(desenhar, 0);
+  if (el.tagName === 'SELECT' || campo === 'valor' || campo === 'tagNova' || campo === 'taxa') setTimeout(desenhar, 0);
 });
 document.addEventListener('focusout', (ev) => {
   const el = ev.target;

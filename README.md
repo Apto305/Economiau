@@ -4,7 +4,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 
 **App:** https://apto305.github.io/Economiau/
 
-## O que já faz (versão 1.1)
+## O que já faz (versão 1.3)
 
 - Entrar com Google (só os e-mails da aba Pessoas da planilha).
 - Escolher a planilha no seletor do Google: o app só enxerga essa planilha.
@@ -17,16 +17,19 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 - Contas fixas ("Repetir todo mês"): aparecem como previstas até alguém confirmar.
 - Tags livres em qualquer lançamento e filtros em Transações (tipo, categoria, conta, tag, busca, não conferidos).
 - "Gasto de trabalho: deduz da renda": o valor sai da renda de quem pagou antes da divisão.
+- Conferência do mês: fatura × banco (total, diferença, marcar compras, lançar o que falta) e saldo das contas × banco com ajuste de saldo.
+- Investimentos: valor bruto, IR, IOF e líquido calculados na hora com os índices do Banco Central (aba Índices), simulação de 1 ano, aportes e resgates.
 - Celular (instalável na tela inicial) e computador (menu lateral, tabela de transações).
 - Modo demonstração com dados inventados ("Experimentar com dados de exemplo").
 
 ## Como funciona
 
-O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.9 ou mais nova). Nada é guardado neste repositório.
+O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.10 ou mais nova). Nada é guardado neste repositório.
 
 Arquivos principais:
 
 - `js/regras.js` — regras: faturas, mês de competência, divisão pela renda, saldos e acerto.
 - `js/dados.js` — leitura e gravação nas abas da planilha (e o modo demonstração).
 - `js/google.js` — login Google, seletor de arquivo e API do Google Sheets.
-- `js/telas.js` e `js/app.js` — telas e ações.
+- `js/invest.js` — cálculo dos investimentos (o mesmo do robô da planilha).
+- `js/telas.js`, `js/telas2.js` e `js/app.js` — telas e ações.

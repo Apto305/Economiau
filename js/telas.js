@@ -3,6 +3,7 @@
 import { esc, brl, brlSinal, dataCurta, dataBR, nomeMesAno, mesCurto, diaSemana, hojeISO, mesDe, somaMes, lerValor, arred } from './util.js';
 import { ic } from './icones.js';
 import * as R from './regras.js';
+import * as T2 from './telas2.js';
 
 const sens = (txt) => `<span class="valor-sens">${txt}</span>`;
 const COR_CONTA = { Roxo: '#7C4DDB', Azul: '#3D7BE0', Verde: '#1E9E6E', Laranja: '#E8742A', Vermelho: '#D9485A', Preto: '#2A2F38', Cinza: '#6B7383' };
@@ -156,7 +157,8 @@ export function telaPerfis(E) {
 // ------------------------------------------------------------- casca
 const MENU = [
   ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes']]],
-  ['Fechamento do mês', [['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
+  ['Fechamento do mês', [['conferencia', 'Conferência', 'ok'], ['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
+  ['Patrimônio', [['investimentos', 'Investimentos', 'investir']]],
   ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['rendas', 'Rendas e divisão', 'rendas']]],
   ['', [['mais', 'Configurações', 'config']]],
 ];
@@ -176,7 +178,7 @@ export function casca(E, titulo, corpo, opcoes = {}) {
     <a href="#/transacoes" ${rota === 'transacoes' ? 'aria-current="page"' : ''}>${ic('transacoes', 22)}Transações</a>
     <button class="mais-btn" data-a="menuLancar" aria-label="Novo lançamento">${ic('mais_', 26)}</button>
     <a href="#/acerto" ${rota === 'acerto' ? 'aria-current="page"' : ''}>${ic('acerto', 22)}Acerto</a>
-    <a href="#/mais" ${['mais', 'contas', 'rendas', 'faturas', 'fixas'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
+    <a href="#/mais" ${['mais', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
   </nav>`;
   const voltar = opcoes.voltar ? `<a class="icone-btn so-cel" href="#/${opcoes.voltar}" aria-label="Voltar">${ic('voltar', 22)}</a>` : '';
   let banner = E.sessaoExpirada ? `<div class="banner">${ic('aviso', 18)}<span>A sessão do Google expirou.</span><button class="btn btn-peq btn-sec" data-a="renovar">Continuar</button></div>` : '';
@@ -425,7 +427,9 @@ export function telaMais(E) {
       <button class="item" data-a="ir" data-v="perfis">${A.avatar(E.perfil, 36)}<span class="principal-txt"><span class="titulo">${esc(A.nome(E.perfil))}</span><span class="sub">Trocar perfil</span></span>${ic('trocar', 18)}</button>
     </div>
     <div class="secao-titulo"><span>Fechamento do mês</span></div>
-    <div class="lista">${link('faturas', 'faturas', 'Faturas', 'Compras por fatura, pagar e alterar fechamento')}${link('acerto', 'acerto', 'Acerto', 'Quem deve quanto no mês')}</div>
+    <div class="lista">${link('conferencia', 'ok', 'Conferência', 'Faturas e saldos × banco')}${link('faturas', 'faturas', 'Faturas', 'Compras por fatura, pagar e alterar fechamento')}${link('acerto', 'acerto', 'Acerto', 'Quem deve quanto no mês')}</div>
+    <div class="secao-titulo"><span>Patrimônio</span></div>
+    <div class="lista">${link('investimentos', 'investir', 'Investimentos', 'Valor líquido, IR e índices do dia')}</div>
     <div class="secao-titulo"><span>Cadastros</span></div>
     <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
     <div class="secao-titulo"><span>App</span></div>
@@ -487,7 +491,7 @@ export function modal(E) {
   const m = E.modal;
   if (!m) return '';
   const A = apoio(E);
-  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa }[m.tipo];
+  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov }[m.tipo];
   return fn ? fn(E, A, m) : '';
 }
 

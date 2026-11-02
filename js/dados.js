@@ -40,6 +40,21 @@ const ABAS = {
       tipo: ['Tipo'], tags: ['Tags'], deduz: ['Deduz da renda', 'b'], pulados: ['Meses pulados'],
     },
   },
+  investimentos: {
+    aba: 'Investimentos', prefixo: 'INV', campos: {
+      id: ['ID'], nome: ['Nome'], emissor: ['Emissor'], tipo: ['Tipo'], titular: ['Titular (ID)'], indexador: ['Indexador'],
+      taxa: ['Taxa', 'n'], dataAplic: ['Data de aplicação', 'd'], vencimento: ['Vencimento', 'd'], isento: ['Isento de IR'],
+      liquidez: ['Liquidez'], status: ['Status'], criadoEm: ['Criado em', 'dh'], arquivadoEm: ['Arquivado em', 'dh'],
+      bruto: ['Valor bruto', 'n'], rendimento: ['Rendimento bruto', 'n'], iof: ['IOF estimado', 'n'], ir: ['IR estimado', 'n'],
+      liquido: ['Valor líquido', 'n'], calculadoEm: ['Calculado em', 'dh'],
+    },
+  },
+  movsInv: {
+    aba: 'Movimentações de investimento', prefixo: 'MOV', campos: {
+      id: ['ID'], investimento: ['Investimento (ID)'], data: ['Data', 'd'], tipo: ['Tipo'], valor: ['Valor', 'n'], conta: ['Conta (ID)'],
+      obs: ['Observação'], criadoEm: ['Criado em', 'dh'], liquido: ['Valor líquido recebido', 'n'],
+    },
+  },
   acertos: {
     aba: 'Acertos', prefixo: 'ACE', campos: {
       id: ['ID'], data: ['Data', 'd'], de: ['De (ID)'], para: ['Para (ID)'], valor: ['Valor', 'n'], mesRef: ['Mês de referência', 'm'],
@@ -97,6 +112,8 @@ function escreverCelula(v, tipo) {
 function normalizar(nome, o) {
   if (nome === 'recorrencias') { o.valor = Number(o.valor) || 0; o.dia = Number(o.dia) || 1; if (!o.tipo) o.tipo = 'Despesa'; }
   if ('tags' in o || nome === 'transacoes' || nome === 'rendas' || nome === 'recorrencias') o.tags = o.tags || '';
+  if (nome === 'movsInv') o.valor = Number(o.valor) || 0;
+  if (nome === 'investimentos') o.taxa = o.taxa === '' ? '' : Number(o.taxa) || 0;
   if (nome === 'contas' || nome === 'transacoes' || nome === 'rendas' || nome === 'acertos') {
     ['valor', 'saldoInicial'].forEach((k) => { if (k in o) o[k] = Number(o[k]) || 0; });
   }
@@ -111,8 +128,9 @@ export class BancoPlanilha {
 
   async carregar() {
     const nomes = NOMES_ABAS.map((k) => ABAS[k].aba);
-    const [meta, cab, val] = await Promise.all([
+    const [meta, cab, val, idx] = await Promise.all([
       sheets.metadados(this.id), sheets.lerCabecalhos(this.id, nomes), sheets.lerAbas(this.id, nomes),
+      sheets.lerAbas(this.id, ['Índices']).catch(() => ({ valueRanges: [{}] })),
     ]);
     this.titulo = meta.properties.title;
     meta.sheets.forEach((s) => (this.sheetIds[s.properties.title] = s.properties.sheetId));
@@ -145,6 +163,7 @@ export class BancoPlanilha {
       this.ultimaLinha = this.ultimaLinha || {};
       this.ultimaLinha[k] = Math.max(1, ...Object.values(this.linhas[k]));
     });
+    db.indices = lerIndices((idx.valueRanges[0] || {}).values || []);
     this.db = db;
     return db;
   }
@@ -205,7 +224,7 @@ export class BancoPlanilha {
 }
 
 // --------------------------------------------------- modo demonstração
-const CHAVE_DEMO = 'economiau-demo-v1';
+const CHAVE_DEMO = 'economiau-demo-v2';
 
 export class BancoDemo {
   constructor() { this.titulo = 'Planilha de demonstração'; this.demo = true; }
@@ -214,6 +233,7 @@ export class BancoDemo {
     try { db = JSON.parse(localStorage.getItem(CHAVE_DEMO) || 'null'); } catch (e) { db = null; }
     if (!db) db = dadosDemo();
     NOMES_ABAS.forEach((k) => { if (!db[k]) db[k] = []; });
+    if (!db.indices) db.indices = [];
     this.db = db;
     return db;
   }
@@ -240,7 +260,7 @@ function dadosDemo() {
   const mes = mesDe(hoje);
   const ant = somaMes(mes, -1);
   const d = (m, dia) => m + '-' + String(dia).padStart(2, '0');
-  const db = { pessoas: [], contas: [], cartoes: [], categorias: [], faturas: [], transacoes: [], rendas: [], acertos: [], recorrencias: [] };
+  const db = { pessoas: [], contas: [], cartoes: [], categorias: [], faturas: [], transacoes: [], rendas: [], acertos: [], recorrencias: [], investimentos: [], movsInv: [], indices: [] };
   db.pessoas = [
     { id: 'PES-0001', nome: 'Demétrio', email: 'demo-demetrio@exemplo.com', tipo: 'Pessoa', status: 'Ativo' },
     { id: 'PES-0002', nome: 'Giovanna', email: 'demo-giovanna@exemplo.com', tipo: 'Pessoa', status: 'Ativo' },
@@ -312,7 +332,34 @@ function dadosDemo() {
   add(d(mes, 5), 'Aluguel', 1760, 'Aluguel ou financiamento', F, D, { conta: 'CTA-0001', status: hojeDia >= 5 ? 'Confirmado' : 'Previsto' });
   T.forEach((t, i) => (t.id = formatarId('TRN', i + 1)));
   db.transacoes = T.map((t) => normalizar('transacoes', t));
+  // índices inventados (dias úteis do último ano) e dois investimentos
+  db.indices = [];
+  const base = new Date(); base.setDate(base.getDate() - 400);
+  for (let i = 0; i < 400; i++) {
+    const x = new Date(base); x.setDate(base.getDate() + i);
+    if (x.getDay() === 0 || x.getDay() === 6) continue;
+    const dia = x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+    db.indices.push({ dia, cdi: 0.055131, selic: 0.055131, ipca: x.getDate() <= 3 ? 0.38 : '' });
+  }
+  const dAp = db.indices[40].dia;
+  db.investimentos = [
+    { id: 'INV-0001', nome: 'CDB Banco Inter 110% CDI', emissor: 'Banco Inter', tipo: 'CDB', titular: 'PES-0003', indexador: 'CDI', taxa: 110, dataAplic: dAp, vencimento: somaMes(mes, 24) + '-15', isento: 'Não', liquidez: 'Diária', status: 'Ativo' },
+    { id: 'INV-0002', nome: 'Tesouro IPCA+ 2035', emissor: 'Tesouro Nacional', tipo: 'Tesouro IPCA+', titular: 'PES-0001', indexador: 'IPCA', taxa: 6.5, dataAplic: db.indices[200].dia, vencimento: '2035-05-15', isento: 'Não', liquidez: 'Diária', status: 'Ativo' },
+  ];
+  db.movsInv = [
+    { id: 'MOV-0001', investimento: 'INV-0001', data: dAp, tipo: 'Aporte', valor: 8000, conta: 'CTA-0001' },
+    { id: 'MOV-0002', investimento: 'INV-0002', data: db.indices[200].dia, tipo: 'Aporte', valor: 3000, conta: 'CTA-0001' },
+  ];
   return db;
+}
+
+// Aba Índices (sem ID): Data | CDI (% ao dia) | Selic (% ao dia) | IPCA (% ao mês)
+function lerIndices(linhas) {
+  if (!linhas.length) return [];
+  const t = (linhas[0] || []).map((x) => String(x).trim());
+  const c = (n) => t.indexOf(n);
+  const [cd, cc, cs, ci] = [c('Data'), c('CDI (% ao dia)'), c('Selic (% ao dia)'), c('IPCA (% ao mês)')];
+  return linhas.slice(1).map((l) => ({ dia: serialParaISO(l[cd]), cdi: l[cc] ?? '', selic: l[cs] ?? '', ipca: l[ci] ?? '' })).filter((x) => x.dia);
 }
 
 export { ABAS };
