@@ -159,7 +159,7 @@ const MENU = [
   ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes']]],
   ['Fechamento do mês', [['conferencia', 'Conferência', 'ok'], ['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
   ['Patrimônio', [['investimentos', 'Investimentos', 'investir']]],
-  ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['rendas', 'Rendas e divisão', 'rendas']]],
+  ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['rendas', 'Rendas e divisão', 'rendas']]],
   ['', [['mais', 'Configurações', 'config']]],
 ];
 
@@ -178,7 +178,7 @@ export function casca(E, titulo, corpo, opcoes = {}) {
     <a href="#/transacoes" ${rota === 'transacoes' ? 'aria-current="page"' : ''}>${ic('transacoes', 22)}Transações</a>
     <button class="mais-btn" data-a="menuLancar" aria-label="Novo lançamento">${ic('mais_', 26)}</button>
     <a href="#/acerto" ${rota === 'acerto' ? 'aria-current="page"' : ''}>${ic('acerto', 22)}Acerto</a>
-    <a href="#/mais" ${['mais', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
+    <a href="#/mais" ${['mais', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
   </nav>`;
   const voltar = opcoes.voltar ? `<a class="icone-btn so-cel" href="#/${opcoes.voltar}" aria-label="Voltar">${ic('voltar', 22)}</a>` : '';
   let banner = E.sessaoExpirada ? `<div class="banner">${ic('aviso', 18)}<span>A sessão do Google expirou.</span><button class="btn btn-peq btn-sec" data-a="renovar">Continuar</button></div>` : '';
@@ -431,7 +431,7 @@ export function telaMais(E) {
     <div class="secao-titulo"><span>Patrimônio</span></div>
     <div class="lista">${link('investimentos', 'investir', 'Investimentos', 'Valor líquido, IR e índices do dia')}</div>
     <div class="secao-titulo"><span>Cadastros</span></div>
-    <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
+    <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('categorias', 'etiqueta', 'Categorias', 'Criar, renomear, mover e arquivar')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
     <div class="secao-titulo"><span>App</span></div>
     <div class="lista">
       <button class="item" data-a="alternarOcultar">${ic(E.ocultar ? 'olhoFechado' : 'olho', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">${E.ocultar ? 'Mostrar valores' : 'Esconder valores'}</span></span></button>
@@ -468,6 +468,53 @@ export function telaFixas(E) {
   return casca(E, 'Contas fixas', corpo, { voltar: 'mais', acoes: seletorMes(E) });
 }
 
+// ----------------------------------------------------------- categorias
+export function usoCategoria(db, id) {
+  const n = db.transacoes.filter((t) => t.categoria === id).length + (db.recorrencias || []).filter((r) => r.categoria === id).length;
+  return n;
+}
+export function telaCategorias(E) {
+  const db = E.db;
+  const tipo = E.catTipo || 'Despesa';
+  const grupos = db.categorias.filter((c) => c.tipo === tipo && !c.grupo).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const ativos = grupos.filter(R.ativo), arquivados = db.categorias.filter((c) => c.tipo === tipo && !R.ativo(c));
+  const usoTxt = (id) => { const n = usoCategoria(db, id); return n ? n + ' lançamento' + (n === 1 ? '' : 's') : 'sem uso'; };
+  const bloco = (g) => {
+    const subs = db.categorias.filter((c) => c.grupo === g.id && R.ativo(c)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    return `<div class="bloco"><div class="lista">
+      <button class="item" data-a="editarCategoria" data-id="${g.id}"><span class="principal-txt"><span class="titulo" style="font-weight:800">${esc(g.nome)}</span><span class="sub">${tipo === 'Despesa' && subs.length ? subs.length + ' subcategoria' + (subs.length === 1 ? '' : 's') + ' · ' + (() => { const n = usoCategoria(db, g.id) + subs.reduce((t, c) => t + usoCategoria(db, c.id), 0); return n ? n + ' lançamento' + (n === 1 ? '' : 's') + ' no grupo' : 'sem uso'; })() : usoTxt(g.id)}</span></span>${ic('lapis', 18, 'style="color:var(--muted)"')}</button>
+      ${subs.map((c) => `<button class="item" style="padding-left:32px" data-a="editarCategoria" data-id="${c.id}"><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${usoTxt(c.id)}</span></span>${ic('lapis', 16, 'style="color:var(--muted)"')}</button>`).join('')}
+      ${tipo === 'Despesa' ? `<button class="item" style="padding-left:32px;color:var(--accent);font-weight:700" data-a="novaCategoria" data-id="${g.id}">${ic('mais_', 16)}<span style="font-size:14px">Subcategoria em ${esc(g.nome)}</span></button>` : ''}
+    </div></div>`;
+  };
+  const corpo = `<div class="abas" role="tablist" style="max-width:420px">${['Despesa', 'Receita'].map((t) => `<button role="tab" aria-selected="${tipo === t}" data-a="catTipo" data-v="${t}">${t === 'Despesa' ? 'Despesas' : 'Receitas'}</button>`).join('')}</div>
+    <button class="btn btn-pri btn-peq" style="margin-top:12px" data-a="novaCategoria" data-id="">${ic('mais_', 16)}${tipo === 'Despesa' ? 'Novo grupo' : 'Nova categoria'}</button>
+    <p class="muted" style="font-size:13px;margin-top:10px">${tipo === 'Despesa' ? 'Os grupos (Moradia, Alimentação…) são usados nas metas e nos relatórios; as subcategorias detalham o gasto.' : 'Receitas não têm grupos.'} Toque para renomear, mover ou arquivar.</p>
+    <div class="grade" style="margin-top:4px">${ativos.map(bloco).join('') || '<div class="vazio">Nenhuma categoria.</div>'}</div>
+    ${arquivados.length ? `<div class="secao-titulo"><span>Arquivadas</span></div><div class="lista">${arquivados.map((c) => `<button class="item" style="opacity:.6" data-a="editarCategoria" data-id="${c.id}"><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${c.grupo ? 'em ' + esc((R.porId(db.categorias, c.grupo) || {}).nome || '') : 'grupo'} · ${usoTxt(c.id)}</span></span></button>`).join('')}</div>` : ''}`;
+  return casca(E, 'Categorias', corpo, { voltar: 'mais' });
+}
+
+function modalCategoria(E, A, m) {
+  const f = m.form;
+  const db = E.db;
+  const original = f.id ? R.porId(db.categorias, f.id) : null;
+  const temSubs = f.id && db.categorias.some((c) => c.grupo === f.id);
+  const grupos = db.categorias.filter((c) => c.tipo === f.tipo && !c.grupo && R.ativo(c) && c.id !== f.id);
+  const uso = f.id ? usoCategoria(db, f.id) : 0;
+  const mudouGrupo = original && (original.grupo || '') !== (f.grupo || '');
+  const podeSerSub = f.tipo === 'Despesa' && !temSubs;
+  const corpo = `
+    <label class="campo"><span>Nome</span><input class="entrada" data-campo="nome" value="${esc(f.nome)}" placeholder="Ex.: Feira"></label>
+    ${podeSerSub ? `<label class="campo"><span>Grupo</span><select class="entrada" data-campo="grupo"><option value="">— é um grupo —</option>${grupos.map((g) => `<option value="${g.id}" ${f.grupo === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}</select></label>` : temSubs ? `<p class="muted" style="font-size:12.5px;margin-top:10px">É um grupo com subcategorias, por isso não pode virar subcategoria.</p>` : ''}
+    ${mudouGrupo && uso ? `<div class="aviso-caixa" style="margin-top:12px">${ic('aviso', 18)}<span>Os ${uso} lançamentos antigos desta categoria passam a contar no novo grupo (nas metas e relatórios também).</span></div>` : ''}
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarCategoria" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : 'Salvar'}</button>
+    ${f.id ? (uso || temSubs
+      ? `<button class="btn btn-borda btn-largo" style="margin-top:8px" data-a="arquivarCategoria">${f.status === 'Arquivado' ? 'Reativar' : 'Arquivar'}</button><p class="muted" style="font-size:12.5px;margin-top:8px">${f.status === 'Arquivado' ? '' : 'Arquivada, ela some da escolha de categoria, mas os lançamentos antigos continuam com ela.' + (temSubs ? ' As subcategorias são arquivadas junto.' : '')}</p>`
+      : `<button class="btn btn-perigo btn-largo" style="margin-top:8px" data-a="excluirCategoria">Excluir (sem lançamentos)</button>`) : ''}`;
+  return folha(f.id ? 'Editar categoria' : f.grupo ? 'Nova subcategoria' : f.tipo === 'Despesa' ? 'Novo grupo' : 'Nova categoria', corpo);
+}
+
 // --------------------------------------------------------- primeiro uso
 export function telaPrimeiro(E) {
   const A = apoio(E);
@@ -491,7 +538,7 @@ export function modal(E) {
   const m = E.modal;
   if (!m) return '';
   const A = apoio(E);
-  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov }[m.tipo];
+  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov }[m.tipo];
   return fn ? fn(E, A, m) : '';
 }
 
@@ -506,8 +553,9 @@ function modalLancar(E, A, m) {
   const db = E.db;
   const fam = A.fam;
   const valor = lerValor(f.valor);
-  const cor = f.tipo === 'receita' ? 'var(--receita)' : f.tipo === 'transferencia' ? 'var(--text)' : 'var(--accent)';
-  const arte = f.tipo === 'transferencia' ? '' : `<img class="lanc-arte" src="assets/${A.gato(f.dono)}-${f.tipo === 'receita' ? 'receita' : 'despesa'}.webp" alt="">`;
+  const estorno = f.tipo === 'cartao' && f.estorno;
+  const cor = f.tipo === 'receita' || estorno ? 'var(--receita)' : f.tipo === 'transferencia' ? 'var(--text)' : 'var(--accent)';
+  const arte = f.tipo === 'transferencia' ? '' : `<img class="lanc-arte" src="assets/${A.gato(f.dono)}-${f.tipo === 'receita' || estorno ? 'receita' : 'despesa'}.webp" alt="">`;
   const linha = (icone, conteudo, extra = '') => `<div class="linha-form" ${extra}>${ic(icone, 22)}${conteudo}</div>`;
   const escolha = (rot, val, acao, v) => `<button class="escolha" data-a="${acao}" data-v="${v || ''}"><span style="flex:1;min-width:0"><span class="rot">${rot}</span><span class="val">${val}</span></span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`;
   const contaTxt = (id) => { const c = A.conta(id); return c ? `${esc(A.nomeConta(id))} <span class="pill ${A.classe(c.dono)}" style="margin-left:6px">${esc(A.nome(c.dono))}</span>` : '<span class="muted">Escolher</span>'; };
@@ -541,11 +589,13 @@ function modalLancar(E, A, m) {
     corpo += linha('texto', `<input class="entrada-limpa" placeholder="Descrição (ex.: Mercado do bairro)" data-campo="desc" value="${esc(f.desc)}" autocomplete="off">`);
     corpo += linha('etiqueta', escolha('Categoria', f.categoria ? esc(A.cat(f.categoria)) : '<span class="muted">Escolher categoria</span>', 'abrirSeletor', 'categoria'));
     if (f.tipo === 'cartao') {
+      if (!m.editando) corpo = `<div style="padding:12px 16px 4px"><div class="abas">${[[false, 'Compra'], [true, 'Estorno / crédito']].map(([v, n]) => `<button aria-selected="${!!f.estorno === v}" data-a="lancEstorno" data-v="${v ? 1 : 0}">${n}</button>`).join('')}</div></div>` + corpo;
       const c = A.cartao(f.cartao);
       let sub = '';
       if (c) { const fat = R.faturaPara(db, c, f.data); sub = `<span class="rot" style="margin-top:2px">Fatura de ${dataCurta(fat.vencimento)} · conta em ${nomeMesAno(fat.mesRenda).split(' ')[0].toLowerCase()}</span>`; }
       corpo += linha('cartao', parcelado ? `<span style="flex:1"><span class="rot" style="display:block;font-size:12px;color:var(--muted)">Cartão</span><span class="val" style="font-weight:700">${cartaoTxt(f.cartao)}</span></span>` : `<button class="escolha" data-a="abrirSeletor" data-v="cartao"><span style="flex:1;min-width:0"><span class="rot">Cartão</span><span class="val">${cartaoTxt(f.cartao)}</span>${sub}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`);
-      if (!m.editando) {
+      if (estorno) corpo += `<div class="muted" style="font-size:12.5px;padding:8px 16px 8px 52px">O valor volta como crédito na fatura da data do estorno e abate dos gastos do mês dela, pela mesma divisão.</div>`;
+      else if (!m.editando) {
         corpo += linha('camadas', `<span style="flex:1;font-size:15px">Parcelas</span><span class="passo"><button data-a="parcelas" data-v="-1" aria-label="Menos parcelas">−</button><span class="v">${f.parcelas > 1 ? f.parcelas + 'x' : 'À vista'}</span><button data-a="parcelas" data-v="1" aria-label="Mais parcelas">+</button></span>`);
         if (f.parcelas > 1 && valor) corpo += `<div class="muted" style="font-size:12.5px;padding:0 16px 8px 52px">${f.parcelas}x de ${brl(R.valoresParcelas(valor, f.parcelas)[1] || valor)} · uma em cada fatura</div>`;
       } else if (parcelado) corpo += `<div class="muted" style="font-size:12.5px;padding:8px 16px">Parcela de uma compra parcelada. Ao salvar, você escolhe se a mudança vale só para esta parcela ou também para as próximas ainda não conferidas. Para mudar o cartão ou a data, exclua e lance de novo.</div>`;
@@ -561,23 +611,24 @@ function modalLancar(E, A, m) {
         const parts = R.partesFamilia(db, { divisao: fam.divisaoPadrao, pagou: pagador, valor }, f.tipo === 'cartao' && A.cartao(f.cartao) ? R.faturaPara(db, A.cartao(f.cartao), f.data).mesRenda : mesDe(f.data));
         const outro = A.ps.find((p) => p.id !== pagador);
         if (f.tipo === 'receita') divTxt = outro ? `${esc(A.nome(pagador))} recebeu; a parte de ${esc(A.nome(outro.id))} é ${brl(valor * (parts[outro.id] || 0))}` : '';
+        else if (estorno) divTxt = outro ? `O crédito caiu no cartão de ${esc(A.nome(pagador))}: abate <strong>${brl(valor * (parts[outro.id] || 0))}</strong> do que ${esc(A.nome(outro.id))} deve.` : '';
         else divTxt = outro ? `${esc(A.nome(outro.id))} deve a ${esc(A.nome(pagador))} a parte que lhe cabe: <strong>${brl(valor * (parts[outro.id] || 0))}</strong>` : '';
         divTxt += `<div class="muted" style="font-size:12px;margin-top:4px">Da família · ${A.ps.map((p) => Math.round((parts[p.id] || 0) * 100)).join(' / ')} pela ${fam.divisaoPadrao === '50/50' ? 'regra meio a meio' : 'renda'}</div>`;
-      } else if (f.dono === pagador) divTxt = f.tipo === 'receita' ? 'Caiu na conta de quem recebe: nada a repassar.' : 'Pago por quem gastou: ninguém deve nada.';
-      else divTxt = f.tipo === 'receita' ? `${esc(A.nome(pagador))} repassa <strong>${brl(valor)}</strong> para ${esc(A.nome(f.dono))}` : `${esc(A.nome(f.dono))} deve <strong>${brl(valor)}</strong> a ${esc(A.nome(pagador))}`;
+      } else if (f.dono === pagador) divTxt = f.tipo === 'receita' ? 'Caiu na conta de quem recebe: nada a repassar.' : estorno ? 'Crédito de quem gastou: nada a acertar.' : 'Pago por quem gastou: ninguém deve nada.';
+      else divTxt = f.tipo === 'receita' ? `${esc(A.nome(pagador))} repassa <strong>${brl(valor)}</strong> para ${esc(A.nome(f.dono))}` : estorno ? `Abate <strong>${brl(valor)}</strong> do que ${esc(A.nome(f.dono))} deve a ${esc(A.nome(pagador))}` : `${esc(A.nome(f.dono))} deve <strong>${brl(valor)}</strong> a ${esc(A.nome(pagador))}`;
     }
     corpo += `<div class="linha-form" style="align-items:flex-start;flex-direction:column;gap:0">
-      <span class="muted" style="font-size:12.5px">${f.tipo === 'receita' ? 'De quem é a receita' : 'De quem é a despesa'}</span>
+      <span class="muted" style="font-size:12.5px">${f.tipo === 'receita' ? 'De quem é a receita' : estorno ? 'De quem era a compra' : 'De quem é a despesa'}</span>
       <div class="donos" role="radiogroup" style="width:100%">${ops.map((p) => `<button role="radio" class="${A.classe(p.id)}" aria-checked="${f.dono === p.id}" data-a="lancDono" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>
       ${divTxt ? `<div class="info-caixa" style="width:100%;margin-top:10px">${divTxt}</div>` : ''}
     </div>`;
     if (f.tipo === 'receita' && ehPessoa) {
       corpo += linha('rendas', `<span style="flex:1"><span style="display:block;font-size:15px">Conta como renda na divisão</span><span class="muted" style="font-size:12.5px">Salário, freelance. Desligue para reembolsos e vendas.</span></span>${interruptor(f.renda, 'lancRenda', 'Conta como renda na divisão')}`);
     }
-    if ((f.tipo === 'despesa' || f.tipo === 'cartao') && ehPessoa && v18) {
+    if ((f.tipo === 'despesa' || f.tipo === 'cartao') && !estorno && ehPessoa && v18) {
       corpo += linha('rendas', `<span style="flex:1"><span style="display:block;font-size:15px">Gasto de trabalho: deduz da renda</span><span class="muted" style="font-size:12.5px">O valor sai da renda de ${esc(A.nome(f.dono))} antes de calcular a divisão (ex.: luz do escritório em casa).</span></span>${interruptor(f.deduz, 'lancDeduz', 'Deduz da renda')}`);
     }
-    if (!m.editando && !f.recorrencia && v18 && !(f.tipo === 'cartao' && f.parcelas > 1)) {
+    if (!m.editando && !f.recorrencia && v18 && !estorno && !(f.tipo === 'cartao' && f.parcelas > 1)) {
       const meses = Number(f.repetirMeses) || 0;
       const ultimo = meses ? nomeMesAno(somaMes(mesDe(f.data), meses - 1)).toLowerCase() : '';
       corpo += linha('repetir', `<span style="flex:1"><span style="display:block;font-size:15px">Repetir todo mês</span><span class="muted" style="font-size:12.5px">${f.repetir ? 'Vira uma conta fixa: aparece como prevista todo dia ' + Number(f.data.slice(8, 10)) + (meses ? ' até ' + ultimo : '') + ', até alguém confirmar cada mês.' : 'Aluguel, internet, assinaturas, salário.'}</span></span>${interruptor(f.repetir, 'lancRepetir', 'Repetir todo mês')}`);
@@ -606,7 +657,7 @@ function modalLancar(E, A, m) {
   }
 
   const titulo = m.editando ? 'Editar lançamento' : f.recorrencia ? 'Confirmar conta fixa' : 'Novo lançamento';
-  const botao = m.editando ? 'Salvar alteração' : { despesa: 'Salvar despesa', cartao: 'Salvar compra', receita: f.renda && ehPessoa ? 'Salvar renda' : 'Salvar receita', transferencia: f.transf === 'fatura' ? 'Registrar pagamento' : 'Salvar transferência' }[f.tipo];
+  const botao = m.editando ? 'Salvar alteração' : { despesa: 'Salvar despesa', cartao: estorno ? 'Salvar estorno' : 'Salvar compra', receita: f.renda && ehPessoa ? 'Salvar renda' : 'Salvar receita', transferencia: f.transf === 'fatura' ? 'Registrar pagamento' : 'Salvar transferência' }[f.tipo];
   return `${veu()}<div class="tela-cheia" role="dialog" aria-label="${titulo}" style="--cor-valor:${cor}">
     <div style="display:flex;align-items:center;gap:4px;padding:calc(10px + env(safe-area-inset-top)) 12px 0 16px"><h1 style="flex:1;font-size:18px;font-weight:800">${titulo}</h1><button class="icone-btn" data-a="fecharModal" aria-label="Fechar">${ic('fechar', 22)}</button></div>
     ${m.editando || f.recorrencia ? '' : `<div style="padding:10px 16px 0;position:relative;z-index:2"><div class="abas" role="tablist">${TIPOS_LANC.map(([id, n]) => `<button role="tab" aria-selected="${f.tipo === id}" data-a="lancTipo" data-v="${id}">${n}</button>`).join('')}</div></div>`}
@@ -671,6 +722,13 @@ function modalSeletor(E, A, m) {
       const btn = (c, nome) => `<button class="chip" style="margin:4px 4px 0 0" aria-pressed="${f.categoria === c.id}" data-a="escolher" data-id="${c.id}">${esc(nome)}</button>`;
       return `<div style="margin:14px 4px 0"><div class="muted" style="font-size:12.5px;font-weight:700">${esc(g.nome)}</div><div>${subs.length ? subs.map((s) => btn(s, s.nome)).join('') : btn(g, g.nome)}</div></div>`;
     }).join('');
+    const nc = E.novaCat || {};
+    corpo += `<div class="cartao" style="margin-top:18px;background:var(--bg)"><div style="font-size:13.5px;font-weight:800">Criar categoria</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <input class="entrada" style="height:42px;font-size:15px" placeholder="Nome" data-nova-cat="nome" value="${esc(nc.nome || '')}" autocomplete="off">
+        <select class="entrada" style="height:42px;font-size:15px" data-nova-cat="grupo"><option value="">${tipo === 'Receita' ? 'Sem grupo' : 'Novo grupo'}</option>${grupos.map((g) => `<option value="${g.id}" ${nc.grupo === g.id ? 'selected' : ''}>em ${esc(g.nome)}</option>`).join('')}</select>
+      </div>
+      <button class="btn btn-sec btn-peq" style="margin-top:8px" data-a="criarCategoriaRapida">${ic('mais_', 16)}Criar e usar</button></div>`;
   } else {
     const ehCartao = m.campo === 'cartao';
     const lista = (ehCartao ? db.cartoes : db.contas).filter(R.ativo);
@@ -723,6 +781,7 @@ function modalDetalhe(E, A, m) {
         <button class="btn btn-borda" data-a="editarLancamento">${ic('lapis', 18)}Editar</button>
         <button class="btn btn-perigo" data-a="excluirLancamento">${ic('lixo', 18)}Excluir</button>
       </div>
+      ${m.k === 'trn' && t.cartao && t.tipo === R.TIPO.despesa ? `<button class="btn btn-borda btn-largo" style="margin-top:8px" data-a="estornarCompra">${ic('repetir', 18)}Lançar estorno desta compra</button>` : ''}
       ${m.k === 'trn' ? `<button class="btn btn-sec btn-largo" style="margin-top:8px" data-a="alternarConferido">${t.conferido ? 'Desmarcar conferido' : 'Marcar como conferido'}</button>` : ''}`;
   const corpo = `<div style="margin:6px 4px 0">
       <div class="muted" style="font-size:13px">${dataBR(tt.data)}${tt.status === 'Previsto' ? ' · previsto' : ''}</div>

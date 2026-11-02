@@ -4,7 +4,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 
 **App:** https://apto305.github.io/Economiau/
 
-## O que já faz (versão 1.3)
+## O que já faz (versão 1.4)
 
 - Entrar com Google (só os e-mails da aba Pessoas da planilha).
 - Escolher a planilha no seletor do Google: o app só enxerga essa planilha.
@@ -17,6 +17,8 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 - Contas fixas ("Repetir todo mês"): aparecem como previstas até alguém confirmar.
 - Tags livres em qualquer lançamento e filtros em Transações (tipo, categoria, conta, tag, busca, não conferidos).
 - "Gasto de trabalho: deduz da renda": o valor sai da renda de quem pagou antes da divisão.
+- Estorno no cartão (direto ou a partir de uma compra), com o crédito entrando na fatura e na divisão.
+- Categorias: criar grupos e subcategorias, renomear, mover de grupo, arquivar e excluir as sem uso; criar na hora do lançamento.
 - Conferência do mês: fatura × banco (total, diferença, marcar compras, lançar o que falta) e saldo das contas × banco com ajuste de saldo.
 - Investimentos: valor bruto, IR, IOF e líquido calculados na hora com os índices do Banco Central (aba Índices), simulação de 1 ano, aportes e resgates.
 - Celular (instalável na tela inicial) e computador (menu lateral, tabela de transações).

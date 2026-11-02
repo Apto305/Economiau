@@ -38,7 +38,7 @@ function desenhar() {
   else if (E.fase === 'erro') html = T.telaErro(E);
   else if (E.rota === 'perfis' || !E.perfil) html = T.telaPerfis(E);
   else {
-    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos };
+    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias };
     html = (telas[E.rota] || T.telaInicio)(E) + T.modal(E);
   }
   raiz.innerHTML = html + T.toast(E);
@@ -226,8 +226,51 @@ const A = {
     setTimeout(() => { const v = document.getElementById('valor'); if (v) v.focus(); }, 50);
   },
   fecharModal() { if (E.modalPai && E.modal && E.modal.tipo !== 'lancar') { E.modal = E.modalPai; E.modalPai = null; } else { E.modal = null; E.modalPai = null; } desenhar(); },
+  lancEstorno(d) { const f = E.modal.form; f.estorno = d.v === '1'; if (f.estorno) { f.parcelas = 1; f.repetir = false; f.deduz = false; } desenhar(); },
+  estornarCompra() {
+    const t = R.porId(E.db.transacoes, E.modal.id);
+    const f = { ...novoForm('cartao'), estorno: true, valor: valorTxt(t.valor), desc: 'Estorno: ' + (t.desc || ''), categoria: t.categoria || '', cartao: t.cartao, dono: t.dono, tags: R.tagsDe(t) };
+    E.modal = { tipo: 'lancar', form: f }; desenhar();
+  },
+  // ---- categorias
+  catTipo(d) { E.catTipo = d.v; desenhar(); },
+  novaCategoria(d) { E.modal = { tipo: 'categoria', form: { nome: '', tipo: E.catTipo || 'Despesa', grupo: d.id || '', status: 'Ativo' } }; desenhar(); setTimeout(() => { const el = document.querySelector('[data-campo="nome"]'); if (el) el.focus(); }, 50); },
+  editarCategoria(d) { const c = R.porId(E.db.categorias, d.id); E.modal = { tipo: 'categoria', form: { ...c, grupo: c.grupo || '' } }; desenhar(); },
+  async salvarCategoria() {
+    const f = E.modal.form;
+    const nome = (f.nome || '').trim();
+    if (!nome) return avisar('Dê um nome para a categoria.', true);
+    const repetida = E.db.categorias.some((c) => c.id !== f.id && c.tipo === f.tipo && (c.grupo || '') === (f.grupo || '') && c.nome.toLowerCase() === nome.toLowerCase() && R.ativo(c));
+    if (repetida) return avisar('Já existe uma categoria com esse nome aqui.', true);
+    const o = { nome, tipo: f.tipo, grupo: f.grupo || '' };
+    const ok = await salvar(() => (f.id ? E.banco.atualizar('categorias', [{ id: f.id, ...o }]) : E.banco.inserir('categorias', [{ ...o, status: 'Ativo' }])));
+    if (ok) { E.modal = null; avisar('Categoria salva.'); }
+  },
+  async arquivarCategoria() {
+    const f = E.modal.form;
+    const novo = f.status === 'Arquivado' ? 'Ativo' : 'Arquivado';
+    const lista = [{ id: f.id, status: novo }];
+    if (novo === 'Arquivado') E.db.categorias.filter((c) => c.grupo === f.id && R.ativo(c)).forEach((c) => lista.push({ id: c.id, status: 'Arquivado' }));
+    const ok = await salvar(() => E.banco.atualizar('categorias', lista));
+    if (ok) { E.modal = null; avisar(novo === 'Arquivado' ? 'Categoria arquivada.' : 'Categoria reativada.'); }
+  },
+  async excluirCategoria() {
+    const f = E.modal.form;
+    const ok = await salvar(() => E.banco.excluir('categorias', [f.id]));
+    if (ok) { E.modal = null; avisar('Categoria excluída.'); }
+  },
+  async criarCategoriaRapida() {
+    const nc = E.novaCat || {};
+    const nome = (nc.nome || '').trim();
+    if (!nome) return avisar('Digite o nome da categoria.', true);
+    const f = E.modalPai.form;
+    const tipo = f.tipo === 'receita' ? 'Receita' : 'Despesa';
+    let nova;
+    const ok = await salvar(async () => { [nova] = await E.banco.inserir('categorias', [{ nome, tipo, grupo: nc.grupo || '', status: 'Ativo' }]); });
+    if (ok) { f.categoria = nova.id; E.novaCat = {}; E.modal = E.modalPai; E.modalPai = null; avisar('Categoria criada.'); }
+  },
   lancTipo(d) {
-    const f = E.modal.form; f.tipo = d.v;
+    const f = E.modal.form; f.tipo = d.v; f.estorno = false;
     if (d.v === 'receita') { f.categoria = ''; f.dono = donoPadrao(); f.renda = true; }
     else if (f.categoria && R.porId(E.db.categorias, f.categoria) && R.porId(E.db.categorias, f.categoria).tipo === 'Receita') f.categoria = '';
     if (d.v === 'despesa' || d.v === 'cartao') f.dono = f.dono || (fam() ? fam().id : donoPadrao());
@@ -439,7 +482,7 @@ const A = {
         tipo, valor: valorTxt(t.valor), data: t.data, dataModo: 'outra', desc: t.desc || '', categoria: t.categoria || '', obs: t.obs || '',
         conta: t.conta || '', cartao: t.cartao || '', contaDestino: t.contaDestino || '', parcelas: t.totalParcelas || 1, meio: t.meio || 'Pix',
         dono: t.dono || '', renda: false, transf: t.tipo === R.TIPO.transf ? 'conta' : 'fatura', grupo: t.grupoParc || '',
-        tags: R.tagsDe(t), tagNova: '', deduz: !!t.deduz, recorrencia: t.recorrencia || '',
+        tags: R.tagsDe(t), tagNova: '', deduz: !!t.deduz, recorrencia: t.recorrencia || '', estorno: t.tipo === R.TIPO.estorno,
       },
     };
     desenhar();
@@ -642,6 +685,11 @@ async function gravarLancamento(f, valor) {
     const c = R.porId(db.contas, f.conta);
     if (!c) throw new Error('Escolha a conta de onde saiu o dinheiro.');
     await E.banco.inserir('transacoes', [{ ...base, valor, tipo: R.TIPO.despesa, categoria: f.categoria, meio: f.meio, conta: c.id, dono: f.dono, pagou: c.dono, divisao: f.dono === famId ? regra : '', pago: !futuro, dataPag: futuro ? '' : f.data }]);
+  } else if (f.tipo === 'cartao' && f.estorno) {
+    const c = R.porId(db.cartoes, f.cartao);
+    if (!c) throw new Error('Escolha o cartão.');
+    const fatura = await garantirFatura(c, f.data, 0, []);
+    await E.banco.inserir('transacoes', [{ ...base, deduz: false, status: 'Confirmado', valor, tipo: R.TIPO.estorno, categoria: f.categoria, meio: 'Crédito', cartao: c.id, fatura, dono: f.dono, pagou: c.dono, divisao: f.dono === famId ? regra : '', pago: false }]);
   } else if (f.tipo === 'cartao') {
     const c = R.porId(db.cartoes, f.cartao);
     if (!c) throw new Error('Escolha o cartão.');
@@ -800,6 +848,7 @@ document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (!el.dataset) return;
   if (el.dataset.filtro === 'busca') { E.filtros.busca = el.value; return; }
+  if (el.dataset.novaCat) { E.novaCat = E.novaCat || {}; E.novaCat[el.dataset.novaCat] = el.value; return; }
   if (el.dataset.saldoBanco) { el.value = mascarar(el.value, true); E.saldoBanco[el.dataset.saldoBanco] = el.value; return; }
   if (el.dataset.totalBanco) { el.value = mascarar(el.value, false); return; }
   if (el.dataset.mascara === 'dinheiro') {
@@ -816,6 +865,7 @@ document.addEventListener('change', (ev) => {
   const el = ev.target;
   if (!el.isConnected) return; // campo que acabou de ser redesenhado
   if (el.dataset && el.dataset.filtro) { E.filtros[el.dataset.filtro] = el.value; desenhar(); return; }
+  if (el.dataset && el.dataset.novaCat) { E.novaCat = E.novaCat || {}; E.novaCat[el.dataset.novaCat] = el.value; return; }
   if (el.dataset && el.dataset.saldoBanco) { setTimeout(desenhar, 0); return; }
   if (el.dataset && el.dataset.totalBanco) {
     const id = el.dataset.totalBanco;
