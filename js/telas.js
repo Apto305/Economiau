@@ -171,7 +171,7 @@ export function casca(E, titulo, corpo, opcoes = {}) {
     <button class="perfil-atual" data-a="ir" data-v="perfis">${A.avatar(E.perfil, 40)}<span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:800">${esc(A.nome(E.perfil))}</span><span class="muted" style="font-size:12px">Trocar perfil</span></span>${ic('trocar', 16)}</button>
     <button class="btn btn-pri novo" data-a="novoLancamento">${ic('mais_', 18)}Novo lançamento</button>
     <nav aria-label="Navegação principal">${MENU.map(([t, itens]) => `<div>${t ? `<div class="grupo-t">${t}</div>` : ''}${itens.map(([id, n, i]) => `<a href="#/${id}" ${rota === id ? 'aria-current="page"' : ''}>${ic(i, 19)}<span>${n}</span>${id === 'acerto' && opcoes.acertoTxt ? `<span class="extra">${opcoes.acertoTxt}</span>` : ''}</a>`).join('')}</div>`).join('')}</nav>
-    <div class="status"><span style="width:8px;height:8px;border-radius:4px;background:${E.banco && E.banco.demo ? 'var(--aviso)' : 'var(--receita)'}"></span>${E.banco && E.banco.demo ? 'Modo demonstração' : 'Planilha conectada'}</div>
+    <div class="status"><span style="width:8px;height:8px;border-radius:4px;background:${E.banco && E.banco.demo ? 'var(--aviso)' : 'var(--receita)'}"></span>${E.banco && E.banco.demo ? 'Modo demonstração' : 'Planilha conectada'}<span style="margin-left:auto">v${E.versao}</span></div>
   </aside>`;
   const nav = `<nav class="nav-baixo" aria-label="Navegação">
     <a href="#/inicio" ${rota === 'inicio' ? 'aria-current="page"' : ''}>${ic('inicio', 22)}Início</a>

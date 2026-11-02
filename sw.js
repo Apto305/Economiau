@@ -1,6 +1,6 @@
 // Service worker: guarda a "casca" do app para abrir rápido e sem internet.
 // Os dados vêm sempre da planilha (não são guardados aqui).
-const VERSAO = 'economiau-v1.4.1';
+const VERSAO = 'economiau-v1.4.2';
 const ARQUIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/config.js', 'js/dados.js', 'js/google.js', 'js/icones.js', 'js/regras.js', 'js/telas.js', 'js/telas2.js', 'js/invest.js', 'js/util.js',
@@ -18,8 +18,10 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Google e fontes: direto da rede
   // rede primeiro (pega versões novas), cache se estiver sem internet
+  // "no-cache" faz o navegador sempre conferir com o GitHub se há versão nova
+  // (sem isso, o cache HTTP de 10 minutos do GitHub Pages segura a versão antiga)
   e.respondWith(
-    fetch(e.request).then((r) => {
+    fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then((r) => {
       const copia = r.clone();
       caches.open(VERSAO).then((c) => c.put(e.request, copia));
       return r;
