@@ -4,7 +4,7 @@ import * as G from './google.js';
 import { BancoPlanilha, BancoDemo } from './dados.js';
 import * as R from './regras.js';
 import * as T from './telas.js';
-import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero } from './util.js';
+import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero, dataNoMes } from './util.js';
 
 const LS = {
   get: (k, d = null) => { try { const v = localStorage.getItem('economiau-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -149,7 +149,7 @@ function novoForm(tipo = 'despesa') {
   return {
     tipo, valor: '', data: hojeISO(), dataModo: 'hoje', desc: '', categoria: '', obs: '',
     conta: primeiraConta(quem), cartao: primeiroCartao(quem), contaDestino: '', parcelas: 1, meio: 'Pix',
-    dono: tipo === 'receita' ? quem : fam() ? fam().id : quem, renda: true, transf: 'fatura', tags: [], tagNova: '', deduz: false, repetir: false,
+    dono: tipo === 'receita' ? quem : fam() ? fam().id : quem, renda: true, transf: 'fatura', tags: [], tagNova: '', deduz: false, repetir: false, repetirMeses: 0,
   };
 }
 const valorTxt = (n) => (n === '' || n === null || n === undefined ? '' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -239,6 +239,27 @@ const A = {
   lancRenda() { E.modal.form.renda = !E.modal.form.renda; desenhar(); },
   lancDeduz() { E.modal.form.deduz = !E.modal.form.deduz; desenhar(); },
   lancRepetir() { E.modal.form.repetir = !E.modal.form.repetir; desenhar(); },
+  repetirPor(d) { E.modal.form.repetirMeses = Number(d.v) || 0; desenhar(); },
+  repetirMeses(d) { const f = E.modal.form; f.repetirMeses = Math.max(1, Math.min(120, (Number(f.repetirMeses) || 1) + Number(d.v))); desenhar(); },
+  pularMes() {
+    const p = R.previstosDoMes(E.db, E.mes).find((x) => x.id === E.modal.id);
+    if (!p) return;
+    if (!E.banco.temCampo('recorrencias', 'pulados')) { avisar('Rode o script da planilha versão 1.9 para poder pular um mês.', true); return; }
+    E.modal = { tipo: 'confirmar', titulo: 'Pular este mês?', alvo: { rec: p.recorrencia, mes: mesDe(p.data) },
+      texto: `"${p.desc}" não vai aparecer como prevista em ${nomeMesAno(mesDe(p.data)).toLowerCase()}. Os outros meses continuam normalmente.`,
+      opcoes: [['confirmarPular', 'Pular só este mês', true]] };
+    desenhar();
+  },
+  async confirmarPular() {
+    const { rec, mes } = E.modal.alvo;
+    const r = R.porId(E.db.recorrencias, rec);
+    const lista = String(r.pulados || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (!lista.includes(mes)) lista.push(mes);
+    const ok = await salvar(() => E.banco.atualizar('recorrencias', [{ id: rec, pulados: lista.sort().join(', ') }]));
+    if (ok) { E.modal = null; avisar('Mês pulado.'); }
+  },
+  salvarParcelaUma() { E.modal = E.modalPai; E.modalPai = null; E.modal.escopo = 'uma'; A.salvarLancamento(); },
+  salvarParcelaProximas() { E.modal = E.modalPai; E.modalPai = null; E.modal.escopo = 'proximas'; A.salvarLancamento(); },
   tagTirar(d) { const f = formAtual(); f.tags = f.tags.filter((x) => x !== d.v); desenhar(); },
   tagPor(d) { const f = formAtual(); addTag(f, d.v); desenhar(); },
   tagAdicionar() { const f = formAtual(); addTag(f, f.tagNova); desenhar(); setTimeout(() => { const el = document.querySelector('[data-campo="tagNova"]'); if (el) el.focus(); }, 30); },
@@ -256,6 +277,16 @@ const A = {
     const valor = arred(lerValor(f.valor));
     if (!(valor > 0)) return avisar('Digite o valor.', true);
     if (f.tipo !== 'transferencia' && !f.desc.trim()) return avisar('Escreva uma descrição.', true);
+    if (E.modal.editando && f.grupo && f.parcelas > 1 && !E.modal.escopo) {
+      const t = R.porId(E.db.transacoes, E.modal.editando);
+      const prox = E.db.transacoes.filter((x) => x.grupoParc === t.grupoParc && x.id !== t.id && !x.conferido && x.parcela > t.parcela).length;
+      E.modalPai = E.modal;
+      E.modal = { tipo: 'confirmar', titulo: 'Aplicar a mudança em quais parcelas?',
+        texto: `Esta é a parcela ${t.parcela} de ${t.totalParcelas}.` + (prox ? ` Há mais ${prox} parcela${prox === 1 ? '' : 's'} depois dela ainda não conferida${prox === 1 ? '' : 's'}.` : ' As próximas já foram conferidas ou não existem.'),
+        opcoes: [['salvarParcelaUma', 'Só esta parcela']].concat(prox ? [['salvarParcelaProximas', 'Esta e as próximas ' + (prox + 1)]] : []) };
+      desenhar();
+      return;
+    }
     const ok = await salvar(async () => {
       if (E.modal.editando) await atualizarLancamento(f, valor); else await gravarLancamento(f, valor);
     });
@@ -476,7 +507,8 @@ async function gravarLancamento(f, valor) {
     const [rec] = await E.banco.inserir('recorrencias', [{
       desc: f.desc.trim(), valor, categoria: f.categoria || '', meio: f.tipo === 'cartao' ? 'Crédito' : f.tipo === 'despesa' ? f.meio : 'Pix',
       cartao: f.tipo === 'cartao' ? f.cartao : '', conta: f.tipo === 'cartao' ? '' : f.conta, dia: Number(f.data.slice(8, 10)), dono: f.dono,
-      pagou: origem ? origem.dono : '', divisao: f.dono === famId ? regra : '', inicio: f.data.slice(0, 8) + '01', fim: '', status: 'Ativo', varia: 'Não',
+      pagou: origem ? origem.dono : '', divisao: f.dono === famId ? regra : '', inicio: f.data.slice(0, 8) + '01',
+      fim: Number(f.repetirMeses) > 0 ? dataNoMes(somaMes(mesDe(f.data), Number(f.repetirMeses) - 1), 31) : '', status: 'Ativo', varia: 'Não',
       tipo: ehRenda ? 'Renda' : f.tipo === 'receita' ? 'Receita' : 'Despesa', tags, deduz: !!extra.deduz,
     }]);
     base.recorrencia = rec.id;
@@ -567,8 +599,11 @@ async function atualizarLancamento(f, valor) {
   }
   const comuns = { desc: f.desc.trim() || t.desc, categoria: f.categoria, dono: f.dono, obs: f.obs || '', ...(v18 ? { tags, deduz: !!f.deduz && f.dono !== famId } : {}) };
   if (t.grupoParc && t.totalParcelas > 1) {
-    const grupo = db.transacoes.filter((x) => x.grupoParc === t.grupoParc);
-    await E.banco.atualizar('transacoes', grupo.map((x) => ({ id: x.id, ...comuns, divisao: f.dono === famId ? (x.divisao || fam().divisaoPadrao) : '' })));
+    // parcela: só esta, ou esta e as próximas ainda não conferidas
+    const alvo = m.escopo === 'proximas'
+      ? db.transacoes.filter((x) => x.grupoParc === t.grupoParc && (x.id === t.id || (!x.conferido && x.parcela > t.parcela)))
+      : [t];
+    await E.banco.atualizar('transacoes', alvo.map((x) => ({ id: x.id, ...comuns, valor, divisao: f.dono === famId ? (x.divisao || fam().divisaoPadrao) : '' })));
   } else {
     const o = { id: t.id, ...comuns, valor, data: f.data, divisao: f.dono === famId ? (t.divisao || (fam() || {}).divisaoPadrao || '') : '' };
     if (f.tipo === 'cartao') {

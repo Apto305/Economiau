@@ -37,7 +37,7 @@ const ABAS = {
       id: ['ID'], desc: ['Descrição'], valor: ['Valor', 'n'], categoria: ['Categoria (ID)'], meio: ['Meio'], cartao: ['Cartão (ID)'],
       conta: ['Conta (ID)'], dia: ['Dia do mês', 'n'], dono: ['Dono (ID)'], pagou: ['Quem paga (ID)'], divisao: ['Divisão'],
       inicio: ['Início', 'd'], fim: ['Fim', 'd'], status: ['Status'], criadoEm: ['Criado em', 'dh'], varia: ['Valor varia'],
-      tipo: ['Tipo'], tags: ['Tags'], deduz: ['Deduz da renda', 'b'],
+      tipo: ['Tipo'], tags: ['Tags'], deduz: ['Deduz da renda', 'b'], pulados: ['Meses pulados'],
     },
   },
   acertos: {

@@ -22,7 +22,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 
 ## Como funciona
 
-O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.8 ou mais nova). Nada é guardado neste repositório.
+O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.9 ou mais nova). Nada é guardado neste repositório.
 
 Arquivos principais:
 

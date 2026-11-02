@@ -107,6 +107,15 @@ export function rendaDoMes(db, mes) {
   return r;
 }
 
+// Todas as entradas de uma pessoa no mês: rendas (entram na divisão) e
+// outras receitas dela (reembolsos, vendas), que não entram na divisão.
+export function entradasDoMes(db, mes, pessoaId) {
+  let divisao = 0, outras = 0;
+  db.rendas.forEach((r) => { if (r.status !== 'Previsto' && r.pessoa === pessoaId && mesDe(r.data) === mes) divisao += r.valor; });
+  db.transacoes.forEach((t) => { if (t.tipo === TIPO.receita && confirmado(t) && t.dono === pessoaId && mesDe(t.data) === mes) outras += t.valor; });
+  return { divisao: arred(divisao), outras: arred(outras), total: arred(divisao + outras) };
+}
+
 // Gastos de trabalho marcados como "Deduz da renda": saem da renda de quem
 // é o gasto antes de calcular a divisão.
 export function deducoesDoMes(db, mes) {
@@ -319,6 +328,7 @@ export function previstosDoMes(db, mes) {
       if (!recorrenciaAtiva(r, m)) continue;
       const data = dataNoMes(m, r.dia || 1);
       if (r.inicio && data < r.inicio) continue;
+      if (String(r.pulados || '').split(',').map((x) => x.trim()).includes(m)) continue; // mês pulado
       const ehRenda = r.tipo === 'Renda';
       const feito = ehRenda
         ? db.rendas.some((x) => x.recorrencia === r.id && mesDe(x.data) === m)

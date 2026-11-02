@@ -209,7 +209,8 @@ export function telaInicio(E) {
   const previstos = R.gastosDoPerfil(dbp, p, mes, true);
   const ac = R.acertoDoMes(db, mes);
   const renda = R.rendaDoMes(db, mes);
-  const rendaPerfil = ehFam ? Object.values(renda).reduce((a, b) => a + b, 0) : renda[p] || 0;
+  const ent = ehFam ? null : R.entradasDoMes(db, mes, p);
+  const rendaPerfil = ehFam ? Object.values(renda).reduce((a, b) => a + b, 0) : ent.total;
   const contas = db.contas.filter((c) => R.ativo(c) && (ehFam || c.dono === p));
   const saldoTotal = contas.reduce((s, c) => s + R.saldoConta(db, c), 0);
   const cartoes = db.cartoes.filter((c) => R.ativo(c) && (ehFam || c.dono === p));
@@ -219,9 +220,9 @@ export function telaInicio(E) {
 
   const kpis = `<div class="kpis">
     <div class="kpi"><div class="r">${ehFam ? 'Gastos da família' : 'Seus gastos'}</div><div class="v">${sens(brl(gastos))}</div><div class="s">${previstos > gastos ? 'com previstos ' + sens(brl(previstos)) : ehFam ? 'no mês' : 'pessoais + sua parte na família'}</div></div>
-    <div class="kpi"><div class="r">${ehFam ? 'Renda da família' : 'Sua renda'}</div><div class="v rec">${sens(brl(rendaPerfil))}</div><div class="s">${rendaPerfil ? (ehFam ? A.ps.map((x) => A.nome(x.id) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%') : 'nenhuma renda lançada em ' + nomeM}</div></div>
+    <div class="kpi"><div class="r">${ehFam ? 'Renda da família' : 'Suas entradas'}</div><div class="v rec">${sens(brl(rendaPerfil))}</div><div class="s">${rendaPerfil ? (ehFam ? 'só o que entra na divisão · ' + A.ps.map((x) => A.nome(x.id) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') : (ent.outras ? sens(brl(ent.divisao)) + ' na divisão (' + Math.round((fr[p] || 0) * 100) + '%) + ' + sens(brl(ent.outras)) + ' de outras entradas' : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%')) : 'nenhuma entrada lançada em ' + nomeM}</div></div>
     <div class="kpi"><div class="r">${ehFam ? 'Em todas as contas' : 'Nas suas contas'}</div><div class="v">${sens(brl(saldoTotal))}</div><div class="s">${contas.length} conta${contas.length === 1 ? '' : 's'}</div></div>
-    <div class="kpi"><div class="r">Sobra do mês</div><div class="v ${sobra < 0 ? 'desp' : ''}">${sens(brlSinal(arred(sobra)))}</div><div class="s">${rendaPerfil ? 'renda ' + sens(brl(rendaPerfil)) + ' − gastos ' + sens(brl(previstos)) : 'lance a renda de ' + nomeM + ' para calcular'}</div></div>
+    <div class="kpi"><div class="r">Sobra do mês</div><div class="v ${sobra < 0 ? 'desp' : ''}">${sens(brlSinal(arred(sobra)))}</div><div class="s">${rendaPerfil ? 'renda ' + sens(brl(rendaPerfil)) + ' − gastos ' + sens(brl(previstos)) : (ehFam ? 'lance a renda de ' : 'lance as entradas de ') + nomeM + ' para calcular'}</div></div>
   </div>`;
 
   const acertoCard = (() => {
@@ -452,7 +453,7 @@ export function telaFixas(E) {
     const origem = r.cartao ? (A.cartao(r.cartao) || {}).nome : A.nomeConta(r.conta);
     const pend = prev.some((p) => p.recorrencia === r.id);
     const ehEntrada = r.tipo === 'Renda' || r.tipo === 'Receita';
-    return `<button class="item" data-a="editarFixa" data-id="${r.id}" ${R.ativo(r) ? '' : 'style="opacity:.55"'}><span class="principal-txt"><span class="titulo">${esc(r.desc)}</span><span class="sub">Todo dia ${r.dia} · ${esc(origem || '')} · ${esc(A.nome(r.dono))}${r.tipo === 'Renda' ? ' · renda' : ''}</span></span>
+    return `<button class="item" data-a="editarFixa" data-id="${r.id}" ${R.ativo(r) ? '' : 'style="opacity:.55"'}><span class="principal-txt"><span class="titulo">${esc(r.desc)}</span><span class="sub">Todo dia ${r.dia}${r.fim ? ' até ' + mesCurto(mesDe(r.fim)) + '/' + r.fim.slice(0, 4) : ''} · ${esc(origem || '')} · ${esc(A.nome(r.dono))}${r.tipo === 'Renda' ? ' · renda' : ''}</span></span>
       <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="valor ${ehEntrada ? 'rec' : ''}">${sens(brl(r.valor))}</span>${R.ativo(r) ? `<span class="pill ${pend ? 'aviso' : 'ok'}">${pend ? 'falta lançar' : 'lançada'}</span>` : '<span class="pill neutra">encerrada</span>'}</span></button>`;
   };
   const corpo = `${v18 ? '' : '<div class="aviso-caixa" style="margin-bottom:12px">Rode o script da planilha versão 1.8 para criar contas fixas.</div>'}
@@ -543,7 +544,7 @@ function modalLancar(E, A, m) {
       if (!m.editando) {
         corpo += linha('camadas', `<span style="flex:1;font-size:15px">Parcelas</span><span class="passo"><button data-a="parcelas" data-v="-1" aria-label="Menos parcelas">−</button><span class="v">${f.parcelas > 1 ? f.parcelas + 'x' : 'À vista'}</span><button data-a="parcelas" data-v="1" aria-label="Mais parcelas">+</button></span>`);
         if (f.parcelas > 1 && valor) corpo += `<div class="muted" style="font-size:12.5px;padding:0 16px 8px 52px">${f.parcelas}x de ${brl(R.valoresParcelas(valor, f.parcelas)[1] || valor)} · uma em cada fatura</div>`;
-      } else if (parcelado) corpo += `<div class="muted" style="font-size:12.5px;padding:8px 16px">Compra parcelada: descrição, categoria, dono, tags e observação mudam em todas as parcelas. Para mudar valor ou cartão, exclua e lance de novo.</div>`;
+      } else if (parcelado) corpo += `<div class="muted" style="font-size:12.5px;padding:8px 16px">Parcela de uma compra parcelada. Ao salvar, você escolhe se a mudança vale só para esta parcela ou também para as próximas ainda não conferidas. Para mudar o cartão ou a data, exclua e lance de novo.</div>`;
     } else {
       corpo += linha('banco', escolha(f.tipo === 'receita' ? 'Caiu na conta' : 'Saiu da conta', contaTxt(f.conta), 'abrirSeletor', 'conta'));
       if (f.tipo === 'despesa') corpo += linha('cartao', `<div class="chips">${['Pix', 'Débito', 'Boleto', 'Débito automático', 'Dinheiro'].map((x) => `<button class="chip" aria-pressed="${f.meio === x}" data-a="lancMeio" data-v="${x}">${x}</button>`).join('')}</div>`);
@@ -573,7 +574,10 @@ function modalLancar(E, A, m) {
       corpo += linha('rendas', `<span style="flex:1"><span style="display:block;font-size:15px">Gasto de trabalho: deduz da renda</span><span class="muted" style="font-size:12.5px">O valor sai da renda de ${esc(A.nome(f.dono))} antes de calcular a divisão (ex.: luz do escritório em casa).</span></span>${interruptor(f.deduz, 'lancDeduz', 'Deduz da renda')}`);
     }
     if (!m.editando && !f.recorrencia && v18 && !(f.tipo === 'cartao' && f.parcelas > 1)) {
-      corpo += linha('repetir', `<span style="flex:1"><span style="display:block;font-size:15px">Repetir todo mês</span><span class="muted" style="font-size:12.5px">${f.repetir ? 'Vira uma conta fixa: aparece como prevista todo dia ' + Number(f.data.slice(8, 10)) + ' até alguém confirmar.' : 'Aluguel, internet, assinaturas, salário.'}</span></span>${interruptor(f.repetir, 'lancRepetir', 'Repetir todo mês')}`);
+      const meses = Number(f.repetirMeses) || 0;
+      const ultimo = meses ? nomeMesAno(somaMes(mesDe(f.data), meses - 1)).toLowerCase() : '';
+      corpo += linha('repetir', `<span style="flex:1"><span style="display:block;font-size:15px">Repetir todo mês</span><span class="muted" style="font-size:12.5px">${f.repetir ? 'Vira uma conta fixa: aparece como prevista todo dia ' + Number(f.data.slice(8, 10)) + (meses ? ' até ' + ultimo : '') + ', até alguém confirmar cada mês.' : 'Aluguel, internet, assinaturas, salário.'}</span></span>${interruptor(f.repetir, 'lancRepetir', 'Repetir todo mês')}`);
+      if (f.repetir) corpo += `<div class="linha-form" style="flex-wrap:wrap;gap:10px;padding-left:52px"><div class="chips"><button class="chip" aria-pressed="${!meses}" data-a="repetirPor" data-v="0">Para sempre</button><button class="chip" aria-pressed="${!!meses}" data-a="repetirPor" data-v="${meses || 12}">Por um tempo</button></div>${meses ? `<span class="passo"><button data-a="repetirMeses" data-v="-1" aria-label="Um mês a menos">−</button><span class="v">${meses} ${meses === 1 ? 'mês' : 'meses'}</span><button data-a="repetirMeses" data-v="1" aria-label="Um mês a mais">+</button></span>` : ''}</div>`;
     }
     corpo += blocoTags + blocoObs;
   } else {
@@ -603,7 +607,7 @@ function modalLancar(E, A, m) {
     <div style="display:flex;align-items:center;gap:4px;padding:calc(10px + env(safe-area-inset-top)) 12px 0 16px"><h1 style="flex:1;font-size:18px;font-weight:800">${titulo}</h1><button class="icone-btn" data-a="fecharModal" aria-label="Fechar">${ic('fechar', 22)}</button></div>
     ${m.editando || f.recorrencia ? '' : `<div style="padding:10px 16px 0;position:relative;z-index:2"><div class="abas" role="tablist">${TIPOS_LANC.map(([id, n]) => `<button role="tab" aria-selected="${f.tipo === id}" data-a="lancTipo" data-v="${id}">${n}</button>`).join('')}</div></div>`}
     <div class="rolar">
-      <div class="lanc-valor">${arte}<label for="valor">${f.tipo === 'cartao' && f.parcelas > 1 && !m.editando ? 'Valor total da compra' : 'Valor'}</label><div class="linha"><span class="moeda">R$</span><input id="valor" inputmode="numeric" placeholder="0,00" data-campo="valor" data-mascara="dinheiro" value="${esc(f.valor)}" autocomplete="off" ${parcelado ? 'disabled' : ''}></div></div>
+      <div class="lanc-valor">${arte}<label for="valor">${f.tipo === 'cartao' && f.parcelas > 1 && !m.editando ? 'Valor total da compra' : parcelado ? 'Valor desta parcela' : 'Valor'}</label><div class="linha"><span class="moeda">R$</span><input id="valor" inputmode="numeric" placeholder="0,00" data-campo="valor" data-mascara="dinheiro" value="${esc(f.valor)}" autocomplete="off"></div></div>
       <div class="lanc-folha">${corpo}</div>
     </div>
     <div class="rodape-fixo"><button class="btn btn-pri" style="min-width:220px;background:${cor === 'var(--text)' ? 'var(--text)' : cor}" data-a="salvarLancamento" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : botao}</button></div>
@@ -706,7 +710,11 @@ function modalDetalhe(E, A, m) {
   const tags = R.tagsDe(tt);
   const botoes = m.k === 'prev'
     ? `<button class="btn btn-pri btn-largo" style="margin-top:16px" data-a="confirmarPrevisto">${ic('ok', 18)}Confirmar lançamento</button>
-       <button class="btn btn-borda btn-largo" style="margin-top:8px" data-a="editarFixa" data-id="${esc(t.recorrencia)}">${ic('lapis', 18)}Editar conta fixa</button>`
+       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+         <button class="btn btn-borda" data-a="editarFixa" data-id="${esc(t.recorrencia)}">${ic('lapis', 18)}Editar fixa</button>
+         <button class="btn btn-perigo" data-a="pularMes">${ic('lixo', 18)}Só este mês</button>
+       </div>
+       <p class="muted" style="font-size:12.5px;margin-top:8px">"Só este mês" tira o previsto de ${esc(nomeMesAno(mesDe(tt.data)).toLowerCase())}; os outros meses continuam.</p>`
     : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">
         <button class="btn btn-borda" data-a="editarLancamento">${ic('lapis', 18)}Editar</button>
         <button class="btn btn-perigo" data-a="excluirLancamento">${ic('lixo', 18)}Excluir</button>
