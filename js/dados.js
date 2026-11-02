@@ -15,7 +15,7 @@ const ABAS = {
       dono: ['Dono (ID)'], pagou: ['Quem pagou (ID)'], divisao: ['Divisão'], pctPagou: ['% de quem pagou', 'n'],
       pago: ['Pago', 'b'], dataPag: ['Data do pagamento', 'd'], recorrencia: ['Recorrência (ID)'], status: ['Status'],
       conferido: ['Conferido', 'b'], obs: ['Observação'], criadoPor: ['Criado por'], criadoEm: ['Criado em', 'dh'],
-      contaDestino: ['Conta de destino (ID)'],
+      contaDestino: ['Conta de destino (ID)'], tags: ['Tags'], deduz: ['Deduz da renda', 'b'],
     },
   },
   faturas: {
@@ -29,7 +29,15 @@ const ABAS = {
   rendas: {
     aba: 'Rendas', prefixo: 'REN', campos: {
       id: ['ID'], data: ['Data de recebimento', 'd'], pessoa: ['Pessoa (ID)'], desc: ['Descrição'], valor: ['Valor', 'n'],
-      conta: ['Conta (ID)'], criadoEm: ['Criado em', 'dh'],
+      conta: ['Conta (ID)'], criadoEm: ['Criado em', 'dh'], tags: ['Tags'], recorrencia: ['Recorrência (ID)'],
+    },
+  },
+  recorrencias: {
+    aba: 'Recorrências', prefixo: 'REC', campos: {
+      id: ['ID'], desc: ['Descrição'], valor: ['Valor', 'n'], categoria: ['Categoria (ID)'], meio: ['Meio'], cartao: ['Cartão (ID)'],
+      conta: ['Conta (ID)'], dia: ['Dia do mês', 'n'], dono: ['Dono (ID)'], pagou: ['Quem paga (ID)'], divisao: ['Divisão'],
+      inicio: ['Início', 'd'], fim: ['Fim', 'd'], status: ['Status'], criadoEm: ['Criado em', 'dh'], varia: ['Valor varia'],
+      tipo: ['Tipo'], tags: ['Tags'], deduz: ['Deduz da renda', 'b'],
     },
   },
   acertos: {
@@ -87,6 +95,8 @@ function escreverCelula(v, tipo) {
 }
 // Campos que dependem de outros (saldo inicial vazio = 0 etc.)
 function normalizar(nome, o) {
+  if (nome === 'recorrencias') { o.valor = Number(o.valor) || 0; o.dia = Number(o.dia) || 1; if (!o.tipo) o.tipo = 'Despesa'; }
+  if ('tags' in o || nome === 'transacoes' || nome === 'rendas' || nome === 'recorrencias') o.tags = o.tags || '';
   if (nome === 'contas' || nome === 'transacoes' || nome === 'rendas' || nome === 'acertos') {
     ['valor', 'saldoInicial'].forEach((k) => { if (k in o) o[k] = Number(o[k]) || 0; });
   }
@@ -203,6 +213,7 @@ export class BancoDemo {
     let db = null;
     try { db = JSON.parse(localStorage.getItem(CHAVE_DEMO) || 'null'); } catch (e) { db = null; }
     if (!db) db = dadosDemo();
+    NOMES_ABAS.forEach((k) => { if (!db[k]) db[k] = []; });
     this.db = db;
     return db;
   }
@@ -229,7 +240,7 @@ function dadosDemo() {
   const mes = mesDe(hoje);
   const ant = somaMes(mes, -1);
   const d = (m, dia) => m + '-' + String(dia).padStart(2, '0');
-  const db = { pessoas: [], contas: [], cartoes: [], categorias: [], faturas: [], transacoes: [], rendas: [], acertos: [] };
+  const db = { pessoas: [], contas: [], cartoes: [], categorias: [], faturas: [], transacoes: [], rendas: [], acertos: [], recorrencias: [] };
   db.pessoas = [
     { id: 'PES-0001', nome: 'Demétrio', email: 'demo-demetrio@exemplo.com', tipo: 'Pessoa', status: 'Ativo' },
     { id: 'PES-0002', nome: 'Giovanna', email: 'demo-giovanna@exemplo.com', tipo: 'Pessoa', status: 'Ativo' },

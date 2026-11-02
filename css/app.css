@@ -228,3 +228,8 @@ select.entrada { appearance: none; background-image: linear-gradient(45deg, tran
 .so-curto { display: none; }
 @media (max-width: 599px) { .so-largo { display: none; } .so-curto { display: inline; text-transform: capitalize; } .topo h1 { font-size: 18px; } }
 @media (min-width: 600px) { .ag { grid-template-columns: minmax(0, 1fr) 140px 140px; gap: 12px; font-size: 14px; } }
+
+.chips.rolavel { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-left: -16px; margin-right: -16px; padding: 0 16px; }
+.chips.rolavel::-webkit-scrollbar { display: none; }
+.chips.rolavel > * { flex: none; }
+@media (min-width: 1100px) { .chips.rolavel { flex-wrap: wrap; margin-left: 0; margin-right: 0; padding: 0; } }

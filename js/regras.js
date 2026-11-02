@@ -90,6 +90,7 @@ export function faturaAtual(db, cartao, hoje) {
 // Mês em que um lançamento conta para divisão, metas e acerto:
 // crédito → mês da fatura (Mês de referência da renda); demais → mês da data.
 export function mesCompetencia(db, t) {
+  if (t.mesComp) return t.mesComp; // previsto de conta fixa (ainda não lançado)
   if (t.fatura && (t.tipo === TIPO.despesa || t.tipo === TIPO.estorno)) {
     const f = porId(db.faturas, t.fatura);
     if (f && f.mesRenda) return f.mesRenda;
@@ -102,8 +103,28 @@ export function mesCompetencia(db, t) {
 export function rendaDoMes(db, mes) {
   const r = {};
   pessoasReais(db).forEach((p) => (r[p.id] = 0));
-  db.rendas.forEach((x) => { if (mesDe(x.data) === mes && r[x.pessoa] !== undefined) r[x.pessoa] += x.valor; });
+  db.rendas.forEach((x) => { if (x.status !== 'Previsto' && mesDe(x.data) === mes && r[x.pessoa] !== undefined) r[x.pessoa] += x.valor; });
   return r;
+}
+
+// Gastos de trabalho marcados como "Deduz da renda": saem da renda de quem
+// é o gasto antes de calcular a divisão.
+export function deducoesDoMes(db, mes) {
+  const d = {};
+  pessoasReais(db).forEach((p) => (d[p.id] = 0));
+  db.transacoes.forEach((t) => {
+    if (!t.deduz || !confirmado(t) || !ehGasto(t) || d[t.dono] === undefined) return;
+    if (mesCompetencia(db, t) !== mes) return;
+    d[t.dono] += t.tipo === TIPO.estorno ? -t.valor : t.valor;
+  });
+  return d;
+}
+
+// Renda que entra na divisão: renda do mês menos as deduções (nunca negativa)
+export function rendaConsiderada(db, mes) {
+  const r = rendaDoMes(db, mes), d = deducoesDoMes(db, mes), o = {};
+  Object.keys(r).forEach((k) => (o[k] = Math.max(0, r[k] - (d[k] || 0))));
+  return o;
 }
 
 // Frações da divisão pela renda no mês. Sem renda lançada no mês, usa o
@@ -111,7 +132,7 @@ export function rendaDoMes(db, mes) {
 export function fracoesRenda(db, mes) {
   const ps = pessoasReais(db);
   for (let i = 0; i < 12; i++) {
-    const r = rendaDoMes(db, somaMes(mes, -i));
+    const r = rendaConsiderada(db, somaMes(mes, -i));
     const total = Object.values(r).reduce((a, b) => a + b, 0);
     if (total > 0) {
       const f = {};
@@ -167,7 +188,8 @@ export function gastosDoPerfil(db, perfilId, mes, incluirPrevistos = false) {
 // Lançamentos que o perfil enxerga
 export function visivelNoPerfil(db, t, perfilId) {
   const fam = familia(db);
-  if (!perfilId || (fam && perfilId === fam.id)) return true;
+  if (!perfilId) return true;
+  if (fam && perfilId === fam.id) return t.dono === fam.id; // perfil Família: só o que é da família
   return t.dono === perfilId || t.pagou === perfilId || (fam && t.dono === fam.id) || t.destinoDono === perfilId;
 }
 
@@ -279,4 +301,53 @@ export function valoresParcelas(total, n) {
   const base = Math.floor((total / n) * 100) / 100;
   const resto = arred(total - base * n);
   return Array.from({ length: n }, (_, i) => arred(i === 0 ? base + resto : base));
+}
+
+// ------------------------------------------------- contas fixas (previstos)
+
+export const recorrenciaAtiva = (r, mes) =>
+  ativo(r) && (!r.inicio || mesDe(r.inicio) <= mes) && (!r.fim || mesDe(r.fim) >= mes);
+
+// Lançamentos previstos das contas fixas que ainda não foram lançados de
+// verdade. Não são gravados na planilha: aparecem como "Previsto" até
+// alguém confirmar. Devolve só os que contam no mês pedido.
+export function previstosDoMes(db, mes) {
+  const lista = [];
+  (db.recorrencias || []).forEach((r) => {
+    for (let k = -2; k <= 0; k++) {
+      const m = somaMes(mes, k);
+      if (!recorrenciaAtiva(r, m)) continue;
+      const data = dataNoMes(m, r.dia || 1);
+      if (r.inicio && data < r.inicio) continue;
+      const ehRenda = r.tipo === 'Renda';
+      const feito = ehRenda
+        ? db.rendas.some((x) => x.recorrencia === r.id && mesDe(x.data) === m)
+        : db.transacoes.some((x) => x.recorrencia === r.id && mesDe(x.data) === m);
+      if (feito) continue;
+      let mesComp = m;
+      let fatura = '';
+      if (r.cartao && !ehRenda) {
+        const c = porId(db.cartoes, r.cartao);
+        if (c) { const f = faturaPara(db, c, data); mesComp = f.mesRenda; fatura = f.id || ''; }
+      }
+      if (mesComp !== mes) continue;
+      const base = { id: 'VREC:' + r.id + ':' + m, virtual: true, recorrencia: r.id, data, desc: r.desc, valor: r.valor, status: 'Previsto', tags: r.tags || '', mesComp };
+      if (ehRenda) lista.push({ ...base, ehRenda: true, tipo: TIPO.receita, pessoa: r.dono, dono: r.dono, conta: r.conta, pagou: r.pagou || r.dono });
+      else lista.push({ ...base, tipo: r.tipo === 'Receita' ? TIPO.receita : TIPO.despesa, categoria: r.categoria, meio: r.cartao ? 'Crédito' : r.meio, cartao: r.cartao, conta: r.conta, fatura, dono: r.dono, pagou: r.pagou, divisao: r.divisao, deduz: r.deduz });
+    }
+  });
+  return lista;
+}
+
+// Cópia dos dados com os previstos do mês incluídos (para telas e somas de previsão)
+export function comPrevistos(db, mes) {
+  const p = previstosDoMes(db, mes);
+  return { ...db, transacoes: [...db.transacoes, ...p.filter((x) => !x.ehRenda)], rendas: [...db.rendas, ...p.filter((x) => x.ehRenda)] };
+}
+
+export const tagsDe = (t) => String(t.tags || '').split(',').map((x) => x.trim()).filter(Boolean);
+export function todasAsTags(db) {
+  const s = new Set();
+  [...db.transacoes, ...db.rendas, ...(db.recorrencias || [])].forEach((t) => tagsDe(t).forEach((x) => s.add(x)));
+  return [...s].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }

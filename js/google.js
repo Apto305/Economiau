@@ -59,6 +59,7 @@ export class SessaoExpirada extends Error {}
 async function api(url, opcoes = {}) {
   if (!tokenValido()) throw new SessaoExpirada('Sessão expirada');
   const r = await fetch(url, {
+    cache: 'no-store',
     ...opcoes,
     headers: { Authorization: 'Bearer ' + token.access_token, 'Content-Type': 'application/json', ...(opcoes.headers || {}) },
   });
