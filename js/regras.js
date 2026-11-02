@@ -166,7 +166,9 @@ export function fracoesRenda(db, mes) {
 // Parte de cada pessoa num lançamento da Família
 export function partesFamilia(db, t, mes) {
   const ps = pessoasReais(db);
-  const regra = t.divisao || (familia(db) || {}).divisaoPadrao || 'Proporcional à renda';
+  let regra = t.divisao || (familia(db) || {}).divisaoPadrao || 'Proporcional à renda';
+  // pago pela conta da Família: não há "quem pagou" para Individual/Personalizada
+  if ((regra === 'Individual' || regra === 'Personalizada') && !ps.some((p) => p.id === t.pagou)) regra = 'Proporcional à renda';
   const f = {};
   if (regra === '50/50') ps.forEach((p) => (f[p.id] = 1 / ps.length));
   else if (regra === 'Individual') ps.forEach((p) => (f[p.id] = p.id === t.pagou ? 1 : 0));
@@ -245,31 +247,102 @@ export function saldoConta(db, conta, ate = '9999-12-31', incluirPrevistos = fal
 
 // ------------------------------------------------------------------ acerto
 
+const ehPessoa = (db, id) => pessoasReais(db).some((p) => p.id === id);
+
+// Quem paga a fatura de um cartão: sempre uma pessoa (nunca a Família).
+// Sem "Paga por" preenchido (planilhas antigas): dono da conta de pagamento,
+// senão o dono do cartão, senão a primeira pessoa.
+export function pagaPorDe(db, cartao) {
+  if (!cartao) return '';
+  if (cartao.pagaPor && ehPessoa(db, cartao.pagaPor)) return cartao.pagaPor;
+  const dc = donoDaConta(db, cartao.contaPag);
+  if (ehPessoa(db, dc)) return dc;
+  if (ehPessoa(db, cartao.dono)) return cartao.dono;
+  return (pessoasReais(db)[0] || {}).id || '';
+}
+
+// Quem pagou um lançamento: no cartão, quem paga a fatura do cartão;
+// nas contas, o dono da conta (pode ser a Família).
+export function quemPagou(db, t) {
+  if (t.cartao && (t.tipo === TIPO.despesa || t.tipo === TIPO.estorno)) return pagaPorDe(db, porId(db.cartoes, t.cartao)) || t.pagou;
+  return t.pagou || donoDaConta(db, t.conta);
+}
+
+// De quem é o dinheiro da Família (contas e investimentos da Família): dos
+// dois, pela divisão padrão da Família (proporcional à renda, 50/50 ou %
+// fixo de cada um).
+export function fracoesFamilia(db, mes) {
+  const ps = pessoasReais(db);
+  const regra = (familia(db) || {}).divisaoPadrao || 'Proporcional à renda';
+  const f = {};
+  if (regra === '50/50') { ps.forEach((p) => (f[p.id] = 1 / ps.length)); return f; }
+  if (regra === 'Personalizada' && ps.every((p) => p.pctFixo !== '' && p.pctFixo !== undefined && !isNaN(p.pctFixo))) {
+    const tot = ps.reduce((a, p) => a + Number(p.pctFixo), 0);
+    if (tot > 0) { ps.forEach((p) => (f[p.id] = Number(p.pctFixo) / tot)); return f; }
+  }
+  return fracoesRenda(db, mes).fracoes;
+}
+
+// Cartões sem "Paga por" (criados antes da 1.11): preenche pela regra de pagaPorDe
+export const cartoesSemPagaPor = (db) => db.cartoes
+  .filter((c) => !(c.pagaPor && ehPessoa(db, c.pagaPor)))
+  .map((c) => ({ id: c.id, pagaPor: pagaPorDe(db, c) }))
+  .filter((x) => x.pagaPor);
+
+// Compras e estornos no cartão cujo "Quem pagou" não é quem paga o cartão
+export const pagadoresErrados = (db) => db.transacoes
+  .filter((t) => t.cartao && (t.tipo === TIPO.despesa || t.tipo === TIPO.estorno))
+  .map((t) => ({ id: t.id, de: t.pagou, pagou: pagaPorDe(db, porId(db.cartoes, t.cartao)) }))
+  .filter((x) => x.pagou && x.pagou !== x.de)
+  .map(({ id, pagou }) => ({ id, pagou }));
+
+// Transferência ou aporte que mexe com a Família e pode ficar fora do acerto
+export const envolveFamilia = (db, a, b) => { const fam = familia(db); return !!fam && a !== b && (a === fam.id || b === fam.id); };
+
 // Saldo de cada pessoa no mês: positivo = tem a receber, negativo = deve.
+// A Família não é uma terceira pessoa: o que ela paga ou recebe é dos dois,
+// na proporção de fracoesFamilia.
 export function acertoDoMes(db, mes) {
   const ps = pessoasReais(db);
   const fam = familia(db);
+  const famId = fam ? fam.id : null;
   const saldo = {};
   ps.forEach((p) => (saldo[p.id] = 0));
-  const det = { famTotal: 0, pagoFam: {}, parteFam: {}, entre: [], receitas: [], transferencias: [], acertos: [] };
+  const det = { famTotal: 0, pagoFam: {}, parteFam: {}, entre: [], receitas: [], transferencias: [], acertos: [], itens: [] };
   ps.forEach((p) => { det.pagoFam[p.id] = 0; det.parteFam[p.id] = 0; });
-  const add = (id, v) => { if (saldo[id] !== undefined) saldo[id] += v; };
+  let fFam = null;
+  const fracFam = () => (fFam = fFam || fracoesFamilia(db, mes));
+  // crédito para quem pagou (v > 0) ou débito para quem recebeu (v < 0)
+  const add = (id, v) => {
+    if (saldo[id] !== undefined) saldo[id] += v;
+    else if (famId && id === famId) { const f = fracFam(); ps.forEach((p) => (saldo[p.id] += v * (f[p.id] || 0))); }
+  };
+  // registra o efeito de um lançamento no acerto, para mostrar na tela
+  const item = (obj, tipo, fn) => {
+    const antes = { ...saldo };
+    fn();
+    const efeito = {}; let mexeu = false;
+    ps.forEach((p) => { efeito[p.id] = arred(saldo[p.id] - antes[p.id]); if (Math.abs(efeito[p.id]) >= 0.005) mexeu = true; });
+    if (mexeu) det.itens.push({ obj, tipo, efeito });
+    return mexeu;
+  };
 
   db.transacoes.forEach((t) => {
     if (!confirmado(t)) return;
     if (ehGasto(t)) {
       if (mesCompetencia(db, t) !== mes) return;
       const v = t.tipo === TIPO.estorno ? -t.valor : t.valor;
-      if (fam && t.dono === fam.id) {
-        const f = partesFamilia(db, t, mes);
-        add(t.pagou, v);
+      const pagou = quemPagou(db, t);
+      if (famId && t.dono === famId) {
+        const f = partesFamilia(db, { ...t, pagou }, mes);
+        add(pagou, v);
         ps.forEach((p) => add(p.id, -v * (f[p.id] || 0)));
         det.famTotal += v;
-        if (det.pagoFam[t.pagou] !== undefined) det.pagoFam[t.pagou] += v;
+        if (det.pagoFam[pagou] !== undefined) det.pagoFam[pagou] += v;
+        else if (pagou === famId) { const ff = fracFam(); ps.forEach((p) => (det.pagoFam[p.id] += v * (ff[p.id] || 0))); }
         ps.forEach((p) => (det.parteFam[p.id] += v * (f[p.id] || 0)));
-      } else if (t.dono && t.pagou && t.dono !== t.pagou) {
-        add(t.pagou, v); add(t.dono, -v);
-        det.entre.push(t);
+      } else if (t.dono && pagou && t.dono !== pagou) {
+        if (item(t, 'entre', () => { add(pagou, v); add(t.dono, -v); })) det.entre.push(t);
       }
       return;
     }
@@ -277,30 +350,41 @@ export function acertoDoMes(db, mes) {
     if (t.tipo === TIPO.receita) {
       if (ehAjuste(t)) return;
       const recebeu = t.pagou || donoDaConta(db, t.conta);
-      if (fam && t.dono === fam.id) {
+      if (famId && t.dono === famId) {
         const f = partesFamilia(db, t, mes);
-        add(recebeu, -t.valor);
-        ps.forEach((p) => add(p.id, t.valor * (f[p.id] || 0)));
-        det.receitas.push(t);
+        if (item(t, 'receita', () => { add(recebeu, -t.valor); ps.forEach((p) => add(p.id, t.valor * (f[p.id] || 0))); })) det.receitas.push(t);
       } else if (t.dono && recebeu && t.dono !== recebeu) {
-        add(recebeu, -t.valor); add(t.dono, t.valor);
-        det.receitas.push(t);
+        if (item(t, 'receita', () => { add(recebeu, -t.valor); add(t.dono, t.valor); })) det.receitas.push(t);
       }
     } else if (t.tipo === TIPO.fatura) {
       const pagador = donoDaConta(db, t.conta);
-      const cartao = porId(db.cartoes, t.cartao);
-      if (cartao && pagador && cartao.dono !== pagador) { add(pagador, t.valor); add(cartao.dono, -t.valor); det.transferencias.push(t); }
+      const deve = pagaPorDe(db, porId(db.cartoes, t.cartao));
+      if (pagador && deve && pagador !== deve && item(t, 'fatura', () => { add(pagador, t.valor); add(deve, -t.valor); })) det.transferencias.push(t);
     } else if (t.tipo === TIPO.transf) {
       if (/^ACE-/.test(t.grupoParc || '')) return; // transferência do acerto: já conta pela aba Acertos
       const de = donoDaConta(db, t.conta), para = donoDaConta(db, t.contaDestino);
-      if (de && para && de !== para) { add(de, t.valor); add(para, -t.valor); det.transferencias.push(t); }
+      if (!de || !para || de === para) return;
+      if (t.foraAcerto && envolveFamilia(db, de, para)) return;
+      if (item(t, 'transf', () => { add(de, t.valor); add(para, -t.valor); })) det.transferencias.push(t);
     }
   });
   db.rendas.forEach((r) => {
-    // renda que caiu na conta do outro: quem recebeu deve repassar
-    if (mesDe(r.data) !== mes) return;
+    // renda que caiu na conta do outro (ou da Família): quem recebeu repassa
+    if (mesDe(r.data) !== mes || r.status === 'Previsto') return;
     const recebeu = donoDaConta(db, r.conta);
-    if (recebeu && r.pessoa && recebeu !== r.pessoa) { add(recebeu, -r.valor); add(r.pessoa, r.valor); }
+    if (recebeu && r.pessoa && recebeu !== r.pessoa) item(r, 'renda', () => { add(recebeu, -r.valor); add(r.pessoa, r.valor); });
+  });
+  (db.movsInv || []).forEach((m) => {
+    // aporte/resgate entre a conta de um e o investimento de outro (ou da Família)
+    if (mesDe(m.data) !== mes || (m.tipo !== 'Aporte' && m.tipo !== 'Resgate')) return;
+    const inv = porId(db.investimentos || [], m.investimento);
+    const dc = donoDaConta(db, m.conta), di = inv ? inv.titular : '';
+    if (!dc || !di || dc === di) return;
+    if (m.foraAcerto && envolveFamilia(db, dc, di)) return;
+    const liq = m.tipo === 'Resgate' && m.liquido !== '' && m.liquido !== undefined && m.liquido !== null ? Number(m.liquido) : m.valor;
+    item({ ...m, desc: m.tipo + ' · ' + (inv.nome || '') }, 'invest', () => {
+      if (m.tipo === 'Aporte') { add(dc, m.valor); add(di, -m.valor); } else { add(di, liq); add(dc, -liq); }
+    });
   });
   db.acertos.forEach((a) => {
     if (a.mesRef !== mes) return;
@@ -309,6 +393,7 @@ export function acertoDoMes(db, mes) {
   });
 
   Object.keys(saldo).forEach((k) => (saldo[k] = arred(saldo[k])));
+  Object.keys(det.pagoFam).forEach((k) => { det.pagoFam[k] = arred(det.pagoFam[k]); det.parteFam[k] = arred(det.parteFam[k]); });
   det.famTotal = arred(det.famTotal);
   // Com duas pessoas: quem deve, para quem, quanto
   let resultado = null;
@@ -317,7 +402,7 @@ export function acertoDoMes(db, mes) {
     const v = saldo[a.id];
     if (Math.abs(v) >= 0.01) resultado = v < 0 ? { de: a.id, para: b.id, valor: arred(-v) } : { de: b.id, para: a.id, valor: arred(v) };
   }
-  return { saldo, resultado, det, fracoes: fracoesRenda(db, mes) };
+  return { saldo, resultado, det, fracoes: fracoesRenda(db, mes), fracoesFamilia: fFam };
 }
 
 // ------------------------------------------------------------- parcelas

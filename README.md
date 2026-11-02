@@ -4,7 +4,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 
 **App:** https://apto305.github.io/Economiau/
 
-## O que já faz (versão 1.4)
+## O que já faz (versão 1.5)
 
 - Entrar com Google (só os e-mails da aba Pessoas da planilha).
 - Escolher a planilha no seletor do Google: o app só enxerga essa planilha.
@@ -13,7 +13,9 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 - Faturas criadas sozinhas pelo dia de fechamento do cartão; dá para corrigir as datas de uma fatura específica.
 - Compras no cartão contam no mês da fatura (renda, divisão e acerto); pix e boleto no mês do pagamento.
 - Divisão dos gastos da família pela renda do mês e acerto calculado (quem transfere quanto para quem).
-- Cadastro de contas, cartões e rendas.
+- Cadastro de contas, cartões e rendas. Contas, cartões e investimentos podem ser da Família; cartão tem "Paga por" (sempre uma pessoa) e a conta é escolhida ao pagar a fatura.
+- Conta da Família: o dinheiro dela é dos dois, pela divisão da família. Transferências e aportes para ela podem dividir no acerto ou ficar de fora (reserva de uma pessoa só).
+- O dono do lançamento já vem marcado com o perfil em que se entrou.
 - Contas fixas ("Repetir todo mês"): aparecem como previstas até alguém confirmar.
 - Tags livres em qualquer lançamento e filtros em Transações (tipo, categoria, conta, tag, busca, não conferidos).
 - "Gasto de trabalho: deduz da renda": o valor sai da renda de quem pagou antes da divisão.
@@ -26,7 +28,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 
 ## Como funciona
 
-O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.10 ou mais nova). Nada é guardado neste repositório.
+O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.11 ou mais nova). Nada é guardado neste repositório.
 
 Arquivos principais:
 

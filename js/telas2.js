@@ -249,6 +249,7 @@ export function modalInvestForm(E, A, m) {
       <label class="campo"><span>Valor aplicado (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
       <label class="campo"><span>Saiu da conta</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${contas.map((c) => `<option value="${c.id}" ${f.conta === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))} (${esc(A.nome(c.dono))})</option>`).join('')}</select></label>
     </div>
+    ${valor ? blocoAcertoMov(E, A, { titular: f.titular }, { ...f, tipo: 'Aporte', data: f.dataAplic }, valor) : ''}
     ${sim ? `<div class="cartao" style="margin-top:14px;background:var(--bg)"><h2 style="font-size:14px;font-weight:800">Em 1 ano, com os índices de hoje</h2>
       <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:14px"><span class="muted">Rende ao ano (bruto)</span><strong>${pct(sim.anual, 2)}</strong></div>
       <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:14px"><span class="muted">Valor bruto</span><strong>${brl(sim.bruto)}</strong></div>
@@ -258,6 +259,25 @@ export function modalInvestForm(E, A, m) {
     </div>` : ''}`}`;
   const rodape = `<button class="btn btn-pri" style="min-width:220px" data-a="salvarInvest" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : m.editando ? 'Salvar alterações' : 'Salvar investimento'}</button>`;
   return telaModal(m.editando ? 'Editar investimento' : 'Novo investimento', corpo, rodape);
+}
+
+// Aporte/resgate entre a conta de um e o investimento de outro (ou da Família)
+function blocoAcertoMov(E, A, inv, f, valor) {
+  const c = R.porId(E.db.contas, f.conta);
+  if (!c || !inv.titular || c.dono === inv.titular) return '';
+  if (!R.envolveFamilia(E.db, c.dono, inv.titular)) return `<div class="info-caixa" style="margin-top:12px">A conta é de ${esc(A.nome(c.dono))} e o investimento de ${esc(A.nome(inv.titular))}: entra no acerto do mês.</div>`;
+  const pessoa = A.fam && c.dono === A.fam.id ? inv.titular : c.dono;
+  const outro = A.ps.find((p) => p.id !== pessoa);
+  const ff = R.fracoesFamilia(E.db, (f.data || '').slice(0, 7));
+  const parte = valor && outro ? ' <strong>' + brl(valor * (ff[outro.id] || 0)) + '</strong>' : '';
+  const dl = (id) => (A.classe(id) === 'gio' ? 'dela' : 'dele');
+  const so = A.classe(pessoa) === 'gio' ? 'sozinha' : 'sozinho';
+  const paraFamilia = (f.tipo === 'Aporte') === (inv.titular === (A.fam || {}).id);
+  const txt = !f.foraAcerto
+    ? (paraFamilia ? `O dinheiro passa a ser dos dois: ${esc(A.nome(outro && outro.id))} fica devendo a ${esc(A.nome(pessoa))} a parte ${dl(outro && outro.id)}` : `${esc(A.nome(pessoa))} tirou dinheiro dos dois: fica devendo a ${esc(A.nome(outro && outro.id))} a parte ${dl(outro && outro.id)}`) + parte + '.'
+    : (paraFamilia ? `Reserva que ${esc(A.nome(pessoa))} guarda ${so} para a família: não mexe no acerto.` : `${esc(A.nome(pessoa))} pegou de volta dinheiro que tinha guardado ${so}: não mexe no acerto.`);
+  const aviso = E.banco.temCampo('movsInv', 'foraAcerto') ? '' : '<div class="aviso-caixa" style="margin-top:8px">Rode o script da planilha versão 1.11 para poder deixar fora do acerto. Por enquanto divide.</div>';
+  return `<div class="cartao" style="margin-top:14px;background:var(--bg);display:flex;gap:12px;align-items:center"><span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">Dividir no acerto</span><span class="muted" style="font-size:12.5px">${txt}</span></span><button class="chip" role="switch" aria-checked="${!f.foraAcerto}" data-a="movForaAcerto" aria-label="Dividir no acerto">${!f.foraAcerto ? 'Sim' : 'Não'}</button></div>${aviso}`;
 }
 
 export function modalMov(E, A, m) {
@@ -283,7 +303,7 @@ export function modalMov(E, A, m) {
     </div>
     ${f.tipo === 'Resgate' ? `<button class="link" style="margin-top:8px" data-a="resgateTotal">Resgatar tudo (${brl(r.liquido)})</button>` : ''}
     <label class="campo"><span>${f.tipo === 'Resgate' ? 'Cai na conta' : 'Sai da conta'}</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${contas.map((c) => `<option value="${c.id}" ${f.conta === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))} (${esc(A.nome(c.dono))})</option>`).join('')}</select></label>
-    ${est}
+    ${est}${blocoAcertoMov(E, A, inv, f, valor)}
     <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMov" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : f.tipo === 'Resgate' ? 'Registrar resgate' : 'Registrar aporte'}</button>`;
   return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="${f.tipo}"><div class="alca"></div><h2>${f.tipo === 'Resgate' ? 'Resgatar' : 'Novo aporte'}</h2>${corpo}</div>`;
 }

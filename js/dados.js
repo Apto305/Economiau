@@ -16,6 +16,7 @@ const ABAS = {
       pago: ['Pago', 'b'], dataPag: ['Data do pagamento', 'd'], recorrencia: ['Recorrência (ID)'], status: ['Status'],
       conferido: ['Conferido', 'b'], obs: ['Observação'], criadoPor: ['Criado por'], criadoEm: ['Criado em', 'dh'],
       contaDestino: ['Conta de destino (ID)'], tags: ['Tags'], deduz: ['Deduz da renda', 'b'],
+      foraAcerto: ['Fora do acerto', 'b'],
     },
   },
   faturas: {
@@ -53,6 +54,7 @@ const ABAS = {
     aba: 'Movimentações de investimento', prefixo: 'MOV', campos: {
       id: ['ID'], investimento: ['Investimento (ID)'], data: ['Data', 'd'], tipo: ['Tipo'], valor: ['Valor', 'n'], conta: ['Conta (ID)'],
       obs: ['Observação'], criadoEm: ['Criado em', 'dh'], liquido: ['Valor líquido recebido', 'n'],
+      foraAcerto: ['Fora do acerto', 'b'],
     },
   },
   acertos: {
@@ -65,7 +67,7 @@ const ABAS = {
     aba: 'Cartões', prefixo: 'CRT', campos: {
       id: ['ID'], nome: ['Nome'], dono: ['Proprietário (ID)'], fecha: ['Dia de fechamento', 'n'], vence: ['Dia de vencimento', 'n'],
       rendaRef: ['Pago com a renda do'], contaPag: ['Conta de pagamento (ID)'], status: ['Status'], criadoEm: ['Criado em', 'dh'],
-      arquivadoEm: ['Arquivado em', 'dh'], limite: ['Limite', 'n'], cor: ['Cor'],
+      arquivadoEm: ['Arquivado em', 'dh'], limite: ['Limite', 'n'], cor: ['Cor'], pagaPor: ['Paga por (ID)'],
     },
   },
   contas: {
@@ -294,8 +296,8 @@ function dadosDemo() {
     { id: 'CTA-0004', nome: 'Inter', banco: 'Inter', dono: 'PES-0002', tipo: 'Conta digital', saldoInicial: 300, dataSaldo: inicio, status: 'Ativo', cor: 'Laranja' },
   ];
   db.cartoes = [
-    { id: 'CRT-0001', nome: 'Nubank Demétrio', dono: 'PES-0001', fecha: 28, vence: 5, rendaRef: 'Mês anterior ao vencimento', contaPag: 'CTA-0001', status: 'Ativo', limite: 8000, cor: 'Roxo' },
-    { id: 'CRT-0002', nome: 'Nubank Giovanna', dono: 'PES-0002', fecha: 28, vence: 5, rendaRef: 'Mês anterior ao vencimento', contaPag: 'CTA-0003', status: 'Ativo', limite: 6000, cor: 'Roxo' },
+    { id: 'CRT-0001', nome: 'Nubank Demétrio', dono: 'PES-0001', fecha: 28, vence: 5, rendaRef: 'Mês anterior ao vencimento', contaPag: '', pagaPor: 'PES-0001', status: 'Ativo', limite: 8000, cor: 'Roxo' },
+    { id: 'CRT-0002', nome: 'Nubank Giovanna', dono: 'PES-0002', fecha: 28, vence: 5, rendaRef: 'Mês anterior ao vencimento', contaPag: '', pagaPor: 'PES-0002', status: 'Ativo', limite: 6000, cor: 'Roxo' },
   ];
   [ant, mes].forEach((m) => {
     db.rendas.push({ id: '', data: d(m, 5), pessoa: 'PES-0001', desc: 'Salário', valor: 6000, conta: 'CTA-0001' });

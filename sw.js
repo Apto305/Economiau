@@ -1,6 +1,6 @@
 // Service worker: guarda a "casca" do app para abrir rápido e sem internet.
 // Os dados vêm sempre da planilha (não são guardados aqui).
-const VERSAO = 'economiau-v1.4.3';
+const VERSAO = 'economiau-v1.5';
 const ARQUIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/config.js', 'js/dados.js', 'js/google.js', 'js/icones.js', 'js/regras.js', 'js/telas.js', 'js/telas2.js', 'js/invest.js', 'js/util.js',
