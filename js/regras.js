@@ -406,3 +406,19 @@ export function comprasNaFaturaErrada(db) {
   });
   return out;
 }
+
+// Mês em que a fatura conta, sempre a partir do vencimento dela e da opção
+// atual do cartão ("anterior ao vencimento" ou "do vencimento").
+export function mesRendaDaFatura(db, f) {
+  const c = porId(db.cartoes, f.cartao);
+  const mv = mesDe(f.vencimento);
+  if (!c || !mv) return f.mesRenda;
+  return c.rendaRef === 'Mesmo mês do vencimento' ? mv : somaMes(mv, -1);
+}
+// Faturas cujo mês gravado não bate com a regra (gravadas antes de mudar a
+// opção do cartão ou as datas). Devolve as correções a gravar.
+export function faturasComMesErrado(db) {
+  return db.faturas.map((f) => ({ f, mesRenda: mesRendaDaFatura(db, f), competencia: mesDe(f.vencimento) || f.competencia }))
+    .filter((x) => x.mesRenda !== x.f.mesRenda || x.competencia !== x.f.competencia)
+    .map((x) => ({ id: x.f.id, mesRenda: x.mesRenda, competencia: x.competencia }));
+}

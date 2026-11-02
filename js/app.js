@@ -123,9 +123,11 @@ async function carregarPlanilha(id) {
 // Conserta compras no cartão que ficaram numa fatura que não cobre a data
 // (erro das versões 1.0 a 1.4 quando a compra era lançada depois de uma mais nova)
 async function corrigirFaturas() {
+  const meses = R.faturasComMesErrado(E.banco.db);
   const erradas = R.comprasNaFaturaErrada(E.banco.db);
-  if (!erradas.length) return;
+  if (!erradas.length && !meses.length) return;
   try {
+    if (meses.length) await E.banco.atualizar('faturas', meses);
     const criadas = [];
     const mudar = [];
     for (const { t, k } of erradas) {
@@ -137,6 +139,8 @@ async function corrigirFaturas() {
     if (!E.banco.demo) await E.banco.carregar();
     E.db = E.banco.db; E.rev++;
     if (mudar.length) avisar(mudar.length === 1 ? 'Corrigi a fatura de 1 compra lançada com data antiga.' : 'Corrigi a fatura de ' + mudar.length + ' compras lançadas com data antiga.');
+    else if (meses.length) avisar(meses.length === 1 ? 'Corrigi o mês de 1 fatura pela regra do cartão.' : 'Corrigi o mês de ' + meses.length + ' faturas pela regra do cartão.');
+    desenhar();
   } catch (e) { tratarErro(e); }
 }
 
@@ -612,7 +616,11 @@ const A = {
     const f = E.modal.form;
     if (!f.nome.trim()) return avisar('Dê um nome para o cartão.', true);
     const o = { nome: f.nome.trim(), dono: f.dono, fecha: f.fecha, vence: f.vence, rendaRef: f.rendaRef, limite: f.limite === '' ? '' : arred(lerValor(f.limite)), contaPag: f.contaPag || '', cor: f.cor, status: f.status || 'Ativo' };
-    const ok = await salvar(() => (f.id ? E.banco.atualizar('cartoes', [{ id: f.id, ...o }]) : E.banco.inserir('cartoes', [o])));
+    const ok = await salvar(async () => {
+      if (f.id) await E.banco.atualizar('cartoes', [{ id: f.id, ...o }]); else await E.banco.inserir('cartoes', [o]);
+      const meses = R.faturasComMesErrado(E.banco.db);
+      if (meses.length) await E.banco.atualizar('faturas', meses);
+    });
     if (ok) { E.modal = null; avisar('Cartão salvo.'); }
   },
   async arquivarCartao() {
@@ -652,6 +660,8 @@ const A = {
     if (!f.fechamento || !f.vencimento) return avisar('Preencha as duas datas.', true);
     const ok = await salvar(async () => {
       await E.banco.atualizar('faturas', [{ id: f.id, fechamento: f.fechamento, vencimento: f.vencimento }]);
+      const meses = R.faturasComMesErrado(E.banco.db);
+      if (meses.length) await E.banco.atualizar('faturas', meses);
       await redistribuirCompras(R.porId(E.db.faturas, f.id));
     });
     if (ok) { E.modal = null; avisar('Datas da fatura atualizadas.'); }
