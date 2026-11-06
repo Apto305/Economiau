@@ -497,7 +497,7 @@ export function telaFixas(E) {
     <p class="muted" style="font-size:13.5px">Para criar uma conta fixa, faça um lançamento normal e ligue "Repetir todo mês". Ela aparece como prevista nos meses seguintes até alguém confirmar.</p>
     <div class="secao-titulo"><span>Em ${esc(nomeMesAno(E.mes).split(' ')[0].toLowerCase())}</span><span>${prev.length} falta${prev.length === 1 ? '' : 'm'} lançar</span></div>
     <div class="lista">${ativas.length ? ativas.map(item).join('') : '<div class="vazio">Nenhuma conta fixa ainda.</div>'}</div>
-    ${outras.length ? `<div class="secao-titulo"><span>Encerradas ou ainda não começaram</span></div><div class="lista">${outras.map(item).join('')}</div>` : ''}`;
+    ${outras.length ? `<button class="secao-titulo" style="width:calc(100% - 8px);background:none;border:0;cursor:pointer;font-family:inherit;padding:0" data-a="verEncerradas" aria-expanded="${!!E.verEncerradas}"><span>Encerradas ou ainda não começaram (${outras.length})</span><span style="display:inline-flex;transform:rotate(${E.verEncerradas ? 90 : 0}deg);transition:transform .15s">${ic('seta', 16)}</span></button>${E.verEncerradas ? `<div class="lista">${outras.map(item).join('')}</div>` : ''}` : ''}`;
   return casca(E, 'Contas fixas', corpo, { voltar: 'mais', acoes: seletorMes(E) });
 }
 
@@ -737,7 +737,14 @@ function modalLancar(E, A, m) {
         corpo += linha('acerto', `<span style="flex:1"><span style="display:block;font-size:15px">Dividir no acerto</span><span class="muted" style="font-size:12.5px">${!f.foraAcerto
           ? (entra ? `O dinheiro passa a ser dos dois: ${esc(A.nome(outro && outro.id))} fica devendo a ${esc(A.nome(pessoa))} a parte ${dl(A, outro && outro.id)}` : `${esc(A.nome(pessoa))} tirou dinheiro dos dois: fica devendo a ${esc(A.nome(outro && outro.id))} a parte ${dl(A, outro && outro.id)}`) + parte + '.'
           : (entra ? `Reserva que ${esc(A.nome(pessoa))} guarda ${sozinho(A, pessoa)} para a família: não mexe no acerto.` : `${esc(A.nome(pessoa))} pegou de volta dinheiro que tinha guardado ${sozinho(A, pessoa)}: não mexe no acerto.`)}</span></span>${interruptor(!f.foraAcerto, 'lancForaAcerto', 'Dividir no acerto')}`);
-      } else if (a && b && a.dono !== b.dono) corpo += `<div class="info-caixa" style="margin:10px 16px">Transferência entre vocês: entra no acerto do mês.</div>`;
+      } else if (a && b && a.dono !== b.dono) {
+        // entre as duas pessoas: empréstimo/devolução (entra no acerto) ou presente (não entra)
+        if (!E.banco.temCampo('transacoes', 'foraAcerto')) corpo += `<div class="aviso-caixa" style="margin:10px 16px">Rode o script da planilha versão 1.11 ou mais nova para poder deixar fora do acerto. Por enquanto entra.</div>`;
+        const v = valor ? ' <strong>' + brl(valor) + '</strong>' : '';
+        corpo += linha('acerto', `<span style="flex:1"><span style="display:block;font-size:15px">Entra no acerto</span><span class="muted" style="font-size:12.5px">${!f.foraAcerto
+          ? `Empréstimo ou acerto entre vocês: ${esc(A.nome(b.dono))} passa a dever${v} a ${esc(A.nome(a.dono))} (ou abate o que ${esc(A.nome(a.dono))} devia).`
+          : `Presente ou dinheiro dado: não mexe no acerto.`}</span></span>${interruptor(!f.foraAcerto, 'lancForaAcerto', 'Entra no acerto')}`);
+      }
     }
     corpo += linha('texto', `<input class="entrada-limpa" placeholder="Descrição (opcional)" data-campo="desc" value="${esc(f.desc)}" autocomplete="off">`);
     corpo += blocoTags + blocoObs;
@@ -862,6 +869,8 @@ function modalDetalhe(E, A, m) {
     }
   } else if (m.k === 'trn' && tt.tipo === R.TIPO.transf && R.envolveFamilia(db, R.donoDaConta(db, tt.conta), R.donoDaConta(db, tt.contaDestino))) {
     acerto = tt.foraAcerto ? 'Fora do acerto (dinheiro guardado por uma pessoa só)' : 'Dividida no acerto pela parte de cada um';
+  } else if (m.k === 'trn' && tt.tipo === R.TIPO.transf && R.entrePessoas(db, R.donoDaConta(db, tt.conta), R.donoDaConta(db, tt.contaDestino))) {
+    acerto = tt.foraAcerto ? 'Fora do acerto (presente ou dinheiro dado)' : `Entra no acerto: ${esc(A.nome(R.donoDaConta(db, tt.contaDestino)))} deve ${brl(tt.valor)} a ${esc(A.nome(R.donoDaConta(db, tt.conta)))}`;
   }
   const fat = tt.fatura ? R.porId(db.faturas, tt.fatura) : null;
   const tags = R.tagsDe(tt);

@@ -266,7 +266,10 @@ export function modalInvestForm(E, A, m) {
 function blocoAcertoMov(E, A, inv, f, valor) {
   const c = R.porId(E.db.contas, f.conta);
   if (!c || !inv.titular || c.dono === inv.titular) return '';
-  if (!R.envolveFamilia(E.db, c.dono, inv.titular)) return `<div class="info-caixa" style="margin-top:12px">A conta é de ${esc(A.nome(c.dono))} e o investimento de ${esc(A.nome(inv.titular))}: entra no acerto do mês.</div>`;
+  if (!R.envolveFamilia(E.db, c.dono, inv.titular)) {
+    const txt = !f.foraAcerto ? `A conta é de ${esc(A.nome(c.dono))} e o investimento de ${esc(A.nome(inv.titular))}: entra no acerto do mês.` : 'Presente ou dinheiro dado: não mexe no acerto.';
+    return `<div class="cartao" style="margin-top:14px;background:var(--bg);display:flex;gap:12px;align-items:center"><span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">Entra no acerto</span><span class="muted" style="font-size:12.5px">${txt}</span></span><button class="chip" role="switch" aria-checked="${!f.foraAcerto}" data-a="movForaAcerto" aria-label="Entra no acerto">${!f.foraAcerto ? 'Sim' : 'Não'}</button></div>`;
+  }
   const pessoa = A.fam && c.dono === A.fam.id ? inv.titular : c.dono;
   const outro = A.ps.find((p) => p.id !== pessoa);
   const ff = R.fracoesFamilia(E.db, (f.data || '').slice(0, 7));

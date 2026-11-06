@@ -342,6 +342,9 @@ export const pagadoresErrados = (db) => db.transacoes
   .map(({ id, pagou }) => ({ id, pagou }));
 
 // Transferência ou aporte que mexe com a Família e pode ficar fora do acerto
+// Transferência ou aporte entre donos diferentes (pessoas ou Família): pode ficar fora do acerto
+export const donosDiferentes = (a, b) => !!a && !!b && a !== b;
+export const entrePessoas = (db, a, b) => { const ps = pessoasReais(db).map((p) => p.id); return a !== b && ps.includes(a) && ps.includes(b); };
 export const envolveFamilia = (db, a, b) => { const fam = familia(db); return !!fam && a !== b && (a === fam.id || b === fam.id); };
 
 // Saldo de cada pessoa no mês: positivo = tem a receber, negativo = deve.
@@ -409,7 +412,7 @@ export function acertoDoMes(db, mes) {
       if (/^ACE-/.test(t.grupoParc || '')) return; // transferência do acerto: já conta pela aba Acertos
       const de = donoDaConta(db, t.conta), para = donoDaConta(db, t.contaDestino);
       if (!de || !para || de === para) return;
-      if (t.foraAcerto && envolveFamilia(db, de, para)) return;
+      if (t.foraAcerto) return; // presente, reserva de uma pessoa só etc.
       if (item(t, 'transf', () => { add(de, t.valor); add(para, -t.valor); })) det.transferencias.push(t);
     }
   });
@@ -425,7 +428,7 @@ export function acertoDoMes(db, mes) {
     const inv = porId(db.investimentos || [], m.investimento);
     const dc = donoDaConta(db, m.conta), di = inv ? inv.titular : '';
     if (!dc || !di || dc === di) return;
-    if (m.foraAcerto && envolveFamilia(db, dc, di)) return;
+    if (m.foraAcerto) return;
     const liq = m.tipo === 'Resgate' && m.liquido !== '' && m.liquido !== undefined && m.liquido !== null ? Number(m.liquido) : m.valor;
     item({ ...m, desc: m.tipo + ' · ' + (inv.nome || '') }, 'invest', () => {
       if (m.tipo === 'Aporte') { add(dc, m.valor); add(di, -m.valor); } else { add(di, liq); add(dc, -liq); }

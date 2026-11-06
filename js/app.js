@@ -734,6 +734,7 @@ const A = {
   },
 
   // ---- faturas
+  verEncerradas() { E.verEncerradas = !E.verEncerradas; desenhar(); },
   selCartao(d) { E.cartaoSel = d.id; E.faturaSel = null; desenhar(); },
   selDonoFatura(d) { E.faturasDono = d.id; E.cartaoSel = null; E.faturaSel = null; desenhar(); },
   selFatura(d) { if (d.id) { E.faturaSel = d.id; desenhar(); } },
@@ -765,7 +766,7 @@ const A = {
 // "Fora do acerto" de um aporte/resgate: só quando a planilha tem a coluna e a Família está envolvida
 function foraMov(titular, f) {
   if (!E.banco.temCampo('movsInv', 'foraAcerto')) return {};
-  return { foraAcerto: R.envolveFamilia(E.db, R.donoDaConta(E.db, f.conta), titular) && !!f.foraAcerto };
+  return { foraAcerto: R.donosDiferentes(R.donoDaConta(E.db, f.conta), titular) && !!f.foraAcerto };
 }
 
 async function garantirFatura(cartao, data, deslocamento, criadas) {
@@ -852,7 +853,7 @@ async function gravarLancamento(f, valor) {
       const d = R.porId(db.contas, f.contaDestino);
       if (!d) throw new Error('Escolha a conta que recebe.');
       if (d.id === c.id) throw new Error('As contas de origem e destino são a mesma.');
-      await E.banco.inserir('transacoes', [{ ...base, deduz: false, desc: base.desc || 'Transferência', valor, tipo: R.TIPO.transf, meio: 'Pix', conta: c.id, contaDestino: d.id, pagou: c.dono, dono: d.dono, pago: true, dataPag: f.data, ...(E.banco.temCampo('transacoes', 'foraAcerto') && R.envolveFamilia(db, c.dono, d.dono) ? { foraAcerto: !!f.foraAcerto } : {}) }]);
+      await E.banco.inserir('transacoes', [{ ...base, deduz: false, desc: base.desc || 'Transferência', valor, tipo: R.TIPO.transf, meio: 'Pix', conta: c.id, contaDestino: d.id, pagou: c.dono, dono: d.dono, pago: true, dataPag: f.data, ...(E.banco.temCampo('transacoes', 'foraAcerto') && R.donosDiferentes(c.dono, d.dono) ? { foraAcerto: !!f.foraAcerto } : {}) }]);
     }
   }
   if (!E.banco.demo) await E.banco.carregar();
@@ -915,7 +916,7 @@ async function atualizarLancamento(f, valor) {
       o.conta = f.conta; o.pagou = (R.porId(db.contas, f.conta) || {}).dono || ''; o.deduz = false;
       if (t.tipo === R.TIPO.transf) {
         o.contaDestino = f.contaDestino; o.dono = (R.porId(db.contas, f.contaDestino) || {}).dono || '';
-        if (E.banco.temCampo('transacoes', 'foraAcerto')) o.foraAcerto = R.envolveFamilia(db, o.pagou, o.dono) && !!f.foraAcerto;
+        if (E.banco.temCampo('transacoes', 'foraAcerto')) o.foraAcerto = R.donosDiferentes(o.pagou, o.dono) && !!f.foraAcerto;
       }
       else o.dono = t.dono;
     }
