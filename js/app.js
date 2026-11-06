@@ -355,6 +355,7 @@ const A = {
   lancDono(d) { const f = E.modal.form; f.dono = d.id; if (ehFamilia(d.id)) f.deduz = false; if (f.tipo === 'receita' && ehFamilia(d.id)) f.renda = false; else if (f.tipo === 'receita' && !E.modal.editando) f.renda = true; desenhar(); },
   lancRenda() { E.modal.form.renda = !E.modal.form.renda; desenhar(); },
   lancDeduz() { E.modal.form.deduz = !E.modal.form.deduz; desenhar(); },
+  lancDivisao(d) { E.modal.form.divisao = d.v; desenhar(); },
   lancForaAcerto() { E.modal.form.foraAcerto = !E.modal.form.foraAcerto; desenhar(); },
   movForaAcerto() { E.modal.form.foraAcerto = !E.modal.form.foraAcerto; desenhar(); },
   lancRepetir() { E.modal.form.repetir = !E.modal.form.repetir; desenhar(); },
@@ -559,7 +560,7 @@ const A = {
         tipo, valor: valorTxt(t.valor), data: t.data, dataModo: 'outra', desc: t.desc || '', categoria: t.categoria || '', obs: t.obs || '',
         conta: t.conta || '', cartao: t.cartao || '', contaDestino: t.contaDestino || '', parcelas: t.totalParcelas || 1, meio: t.meio || 'Pix',
         dono: t.dono || '', renda: false, transf: t.tipo === R.TIPO.transf ? 'conta' : 'fatura', grupo: t.grupoParc || '',
-        tags: R.tagsDe(t), tagNova: '', deduz: !!t.deduz, recorrencia: t.recorrencia || '', estorno: t.tipo === R.TIPO.estorno, foraAcerto: !!t.foraAcerto,
+        tags: R.tagsDe(t), tagNova: '', deduz: !!t.deduz, recorrencia: t.recorrencia || '', estorno: t.tipo === R.TIPO.estorno, foraAcerto: !!t.foraAcerto, divisao: t.divisao || '',
       },
     };
     desenhar();
@@ -764,7 +765,7 @@ async function garantirFatura(cartao, data, deslocamento, criadas) {
 async function gravarLancamento(f, valor) {
   const db = E.db;
   const famId = fam() ? fam().id : '';
-  const regra = (fam() || {}).divisaoPadrao || 'Proporcional à renda';
+  const regra = f.divisao || (fam() || {}).divisaoPadrao || 'Proporcional à renda';
   const futuro = f.data > hojeISO();
   const v18 = E.banco.temCampo('transacoes', 'tags');
   const tags = (f.tags || []).join(', ');
@@ -882,9 +883,9 @@ async function atualizarLancamento(f, valor) {
     const alvo = m.escopo === 'proximas'
       ? db.transacoes.filter((x) => x.grupoParc === t.grupoParc && (x.id === t.id || (!x.conferido && x.parcela > t.parcela)))
       : [t];
-    await E.banco.atualizar('transacoes', alvo.map((x) => ({ id: x.id, ...comuns, valor, divisao: f.dono === famId ? (x.divisao || fam().divisaoPadrao) : '' })));
+    await E.banco.atualizar('transacoes', alvo.map((x) => ({ id: x.id, ...comuns, valor, divisao: f.dono === famId ? (f.divisao || x.divisao || fam().divisaoPadrao) : '' })));
   } else {
-    const o = { id: t.id, ...comuns, valor, data: f.data, divisao: f.dono === famId ? (t.divisao || (fam() || {}).divisaoPadrao || '') : '' };
+    const o = { id: t.id, ...comuns, valor, data: f.data, divisao: f.dono === famId ? (f.divisao || t.divisao || (fam() || {}).divisaoPadrao || '') : '' };
     // conta fixa com a data mudada para outro mês: continua sendo do mês original
     if (t.recorrencia && !t.mesRec && mesDe(f.data) !== mesDe(t.data) && E.banco.temCampo('transacoes', 'mesRec')) o.mesRec = mesDe(t.data);
     if (f.tipo === 'cartao') {
