@@ -62,12 +62,12 @@ const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, ''
 export const FILTROS_PADRAO = { quem: 'tudo', tipo: 'todos', grupo: '', origem: '', tag: '', naoConf: false, busca: '' };
 export const filtrosAtivos = (f) => ['grupo', 'origem', 'tag', 'busca'].filter((k) => f[k]).length + (f.naoConf ? 1 : 0);
 
-function filtrar(E, A, itens) {
+function filtrar(E, A, itens, tudoNaFamilia = false) {
   const f = E.filtros || FILTROS_PADRAO;
   const p = E.perfil, fam = A.fam;
   const ehEntre = (t) => t.dono && t.pagou && t.dono !== t.pagou && !(fam && t.dono === fam.id);
   return itens.filter(({ t }) => {
-    if (f.quem === 'entre') { if (!ehEntre(t)) return false; } else if (!R.visivelNoPerfil(E.db, t, p)) return false;
+    if (f.quem === 'entre') { if (!ehEntre(t)) return false; } else if (!R.visivelNoPerfil(E.db, t, p, tudoNaFamilia)) return false;
     if (f.quem === 'minhas' && t.dono !== p) return false;
     if (f.quem === 'familia' && !(fam && t.dono === fam.id)) return false;
     if (f.tipo === 'despesas' && !R.ehGasto(t)) return false;
@@ -272,7 +272,7 @@ export function telaTransacoes(E) {
   const A = apoio(E);
   const f = E.filtros || FILTROS_PADRAO;
   const todos = itensDoMes(E, A, E.mes);
-  const itens = filtrar(E, A, todos);
+  const itens = filtrar(E, A, todos, true);
   const ehFam = A.fam && E.perfil === A.fam.id;
   const QUEM = [['tudo', 'Tudo'], ['minhas', 'Só minhas'], ['familia', 'Da família'], ['entre', 'Entre vocês']].filter(([id]) => !(ehFam && (id === 'minhas' || id === 'familia')));
   const TIPOS = [['todos', 'Todos os tipos'], ['despesas', 'Despesas'], ['receitas', 'Receitas'], ['transf', 'Transferências']];
@@ -375,11 +375,17 @@ export function telaFaturas(E) {
   const db = E.db;
   const cartoes = db.cartoes.filter(R.ativo);
   if (!cartoes.length) return casca(E, 'Faturas', `<div class="vazio">Nenhum cartão cadastrado. <button class="link" data-a="novoCartao">Cadastrar cartão</button></div>`, { voltar: 'mais' });
-  const sel = R.porId(cartoes, E.cartaoSel) || cartoes[0];
+  // primeiro a pessoa (de quem é o cartão), depois os cartões dela
+  const donos = [...A.ps, A.fam].filter((p) => p && cartoes.some((c) => c.dono === p.id));
+  const cartaoAntes = R.porId(cartoes, E.cartaoSel);
+  const dono = R.porId(donos, E.faturasDono) || (cartaoAntes && R.porId(donos, cartaoAntes.dono)) || R.porId(donos, E.perfil) || donos[0];
+  const meus = dono ? cartoes.filter((c) => c.dono === dono.id) : cartoes;
+  const sel = R.porId(meus, E.cartaoSel) || meus[0];
   const lista = R.faturasDoCartao(db, sel.id);
   const atual = R.faturaAtual(db, sel, A.hoje);
   const fSel = R.porId(lista, E.faturaSel) || atual || lista[lista.length - 1];
-  const tabsCartao = `<div class="chips" role="tablist" style="margin-bottom:10px">${cartoes.map((c) => `<button class="chip" role="tab" aria-pressed="${c.id === sel.id}" data-a="selCartao" data-id="${c.id}">${esc(c.nome)}</button>`).join('')}</div>`;
+  const tabsDono = donos.length > 1 ? `<div class="donos" role="tablist" style="grid-template-columns:repeat(${donos.length},1fr);margin-bottom:12px">${donos.map((p) => `<button role="tab" class="${A.classe(p.id)}" aria-checked="${p.id === dono.id}" data-a="selDonoFatura" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>` : '';
+  const tabsCartao = `${tabsDono}<div class="chips" role="tablist" style="margin-bottom:10px">${meus.map((c) => `<button class="chip" role="tab" aria-pressed="${c.id === sel.id}" data-a="selCartao" data-id="${c.id}">${esc(c.nome)}</button>`).join('')}</div>`;
   if (!fSel) return casca(E, 'Faturas', tabsCartao + '<div class="vazio">Este cartão ainda não tem compras.</div>', { voltar: 'mais' });
   const i = lista.indexOf(fSel);
   const ant = lista[i - 1], prox = lista[i + 1];

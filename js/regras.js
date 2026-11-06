@@ -58,14 +58,40 @@ export function faturaPara(db, cartao, data, deslocamento = 0) {
     if (data < inicioFatura(cartao, f, lista[i - 1]) || data >= f.fechamento) continue;
     base = f; break;
   }
-  let mesFecha = base ? mesDe(base.fechamento) : mesFechaPadrao(cartao, data);
   if (base && deslocamento === 0) return base;
+  // A fatura de um mês é achada pelo mês do vencimento (a data de fechamento
+  // pode ter sido corrigida para o mês vizinho, ex.: fecha 01/11 em vez de 30/10)
+  const mesVenc = (mf) => mesDe(datasFatura(cartao, mf).vencimento);
+  const doMes = (mf) => lista.find((f) => mesDe(f.vencimento) === mesVenc(mf));
+  let mesFecha = base ? mesDe(base.fechamento) : mesFechaPadrao(cartao, data);
+  if (base) { const mv = mesDe(base.vencimento); while (mesVenc(mesFecha) < mv) mesFecha = somaMes(mesFecha, 1); while (mesVenc(mesFecha) > mv) mesFecha = somaMes(mesFecha, -1); }
   // a fatura desse mês já existe mas fecha antes da compra (data editada): vai para a próxima
-  if (!base) { const ex = lista.find((f) => mesDe(f.fechamento) === mesFecha); if (ex && data >= ex.fechamento) mesFecha = somaMes(mesFecha, 1); }
+  if (!base) { const ex = doMes(mesFecha); if (ex && data >= ex.fechamento) mesFecha = somaMes(mesFecha, 1); }
   mesFecha = somaMes(mesFecha, deslocamento);
-  const existente = lista.find((f) => mesDe(f.fechamento) === mesFecha);
+  const existente = doMes(mesFecha);
   if (existente) return existente;
   return { id: null, cartao: cartao.id, status: 'Aberta', ...datasFatura(cartao, mesFecha) };
+}
+
+// Faturas repetidas: duas faturas do mesmo cartão vencendo no mesmo mês.
+// Fica a que tem mais lançamentos (ou a conferida); os lançamentos da outra
+// passam para ela e a outra é apagada.
+export function faturasRepetidas(db) {
+  const usos = (id) => db.transacoes.filter((t) => t.fatura === id).length;
+  const grupos = {};
+  db.faturas.forEach((f) => { if (f.cartao && f.vencimento) (grupos[f.cartao + '|' + mesDe(f.vencimento)] ||= []).push(f); });
+  const mover = [], apagar = [], manter = [];
+  Object.values(grupos).forEach((g) => {
+    if (g.length < 2) return;
+    const ord = [...g].sort((a, b) => (usos(b.id) - usos(a.id)) || ((b.conferida ? 1 : 0) - (a.conferida ? 1 : 0)) || (a.id < b.id ? -1 : 1));
+    const fica = ord[0];
+    manter.push(fica.id);
+    ord.slice(1).forEach((f) => {
+      db.transacoes.filter((t) => t.fatura === f.id).forEach((t) => mover.push({ id: t.id, fatura: fica.id }));
+      apagar.push(f.id);
+    });
+  });
+  return { mover, apagar, manter };
 }
 
 // Ao mudar o dia de fechamento/vencimento do cartão: faturas ainda não
@@ -227,11 +253,17 @@ export function gastosDoPerfil(db, perfilId, mes, incluirPrevistos = false) {
 }
 
 // Lançamentos que o perfil enxerga
-export function visivelNoPerfil(db, t, perfilId) {
+// O que aparece em cada perfil: no de uma pessoa, o que é dela e o que é da
+// família (transferências e pagamentos de fatura também quando mexem numa
+// conta dela). No da Família: só o que é da família, ou tudo (tudo = true,
+// usado na aba Transações).
+export function visivelNoPerfil(db, t, perfilId, tudo = false) {
   const fam = familia(db);
   if (!perfilId) return true;
-  if (fam && perfilId === fam.id) return t.dono === fam.id; // perfil Família: só o que é da família
-  return t.dono === perfilId || t.pagou === perfilId || (fam && t.dono === fam.id) || t.destinoDono === perfilId;
+  if (fam && perfilId === fam.id) return tudo || t.dono === fam.id;
+  if (t.dono === perfilId || (fam && t.dono === fam.id)) return true;
+  if (t.tipo === TIPO.transf || t.tipo === TIPO.fatura) return donoDaConta(db, t.conta) === perfilId || donoDaConta(db, t.contaDestino) === perfilId;
+  return false;
 }
 
 // ------------------------------------------------------------------ saldos

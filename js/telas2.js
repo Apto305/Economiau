@@ -27,7 +27,8 @@ export function estadoFatura(db, f) {
   const banco = f.totalBanco === '' || f.totalBanco === undefined || f.totalBanco === null ? null : Number(f.totalBanco);
   const dif = banco === null ? null : arred(banco - total);
   const marcadas = compras.filter((t) => t.conferido).length;
-  const pronta = banco !== null && Math.abs(dif) < 0.005 && marcadas === compras.length;
+  // fatura sem nenhum lançamento: não há o que conferir
+  const pronta = (banco !== null && Math.abs(dif) < 0.005 && marcadas === compras.length) || (!compras.length && Math.abs(total) < 0.005 && !banco);
   return { compras, total, banco, dif, marcadas, pronta };
 }
 

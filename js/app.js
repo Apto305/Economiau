@@ -127,17 +127,26 @@ async function corrigirFaturas() {
   const erradas = R.comprasNaFaturaErrada(E.banco.db);
   // 1.5: "Paga por" nos cartões antigos e "Quem pagou" das compras no cartão
   const semPaga = E.banco.temCampo('cartoes', 'pagaPor') ? R.cartoesSemPagaPor(E.banco.db) : [];
-  if (!erradas.length && !meses.length && !semPaga.length && !R.pagadoresErrados(E.banco.db).length) return;
+  const rep = R.faturasRepetidas(E.banco.db);
+  if (!erradas.length && !meses.length && !semPaga.length && !rep.apagar.length && !R.pagadoresErrados(E.banco.db).length) return;
   try {
+    // faturas repetidas (mesmo cartão vencendo no mesmo mês): junta numa só
+    if (rep.apagar.length) {
+      if (rep.mover.length) await E.banco.atualizar('transacoes', rep.mover);
+      await E.banco.excluir('faturas', rep.apagar);
+      if (E.confFatura && rep.apagar.includes(E.confFatura)) E.confFatura = rep.manter[0];
+    }
     if (semPaga.length) await E.banco.atualizar('cartoes', semPaga);
     const pagou = R.pagadoresErrados(E.banco.db);
     if (pagou.length) await E.banco.atualizar('transacoes', pagou);
-    if (meses.length) await E.banco.atualizar('faturas', meses);
+    const meses2 = R.faturasComMesErrado(E.banco.db);
+    if (meses2.length) await E.banco.atualizar('faturas', meses2);
     const mudar = await moverComprasErradas();
     E.db = E.banco.db; E.rev++;
     if (mudar) avisar(mudar === 1 ? 'Corrigi a fatura de 1 compra lançada com data antiga.' : 'Corrigi a fatura de ' + mudar + ' compras lançadas com data antiga.');
     else if (meses.length) avisar(meses.length === 1 ? 'Corrigi o mês de 1 fatura pela regra do cartão.' : 'Corrigi o mês de ' + meses.length + ' faturas pela regra do cartão.');
     else if (semPaga.length) avisar('Preenchi "Paga por" nos cartões. Confira em Contas e cartões.');
+    else if (rep.apagar.length) avisar(rep.apagar.length === 1 ? 'Juntei 1 fatura repetida.' : 'Juntei ' + rep.apagar.length + ' faturas repetidas.');
     desenhar();
   } catch (e) { tratarErro(e); }
 }
@@ -721,6 +730,7 @@ const A = {
 
   // ---- faturas
   selCartao(d) { E.cartaoSel = d.id; E.faturaSel = null; desenhar(); },
+  selDonoFatura(d) { E.faturasDono = d.id; E.cartaoSel = null; E.faturaSel = null; desenhar(); },
   selFatura(d) { if (d.id) { E.faturaSel = d.id; desenhar(); } },
   alterarFechamento(d) { const f = R.porId(E.db.faturas, d.id); E.modal = { tipo: 'fechamento', form: { id: f.id, fechamento: f.fechamento, vencimento: f.vencimento } }; desenhar(); },
   async salvarFechamento() {
