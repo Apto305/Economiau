@@ -75,7 +75,7 @@ function filtrar(E, A, itens) {
     if (f.tipo === 'transf' && t.tipo !== R.TIPO.fatura && t.tipo !== R.TIPO.transf) return false;
     if (f.grupo) { const c = R.porId(E.db.categorias, t.categoria); if (!c || (c.id !== f.grupo && c.grupo !== f.grupo)) return false; }
     if (f.origem && t.conta !== f.origem && t.cartao !== f.origem && t.contaDestino !== f.origem) return false;
-    if (f.tag && !R.tagsDe(t).includes(f.tag)) return false;
+    if (f.tag && !R.tagsDe(t).includes(R.normTag(f.tag))) return false;
     if (f.naoConf && (t.conferido || t.ehRenda || t.virtual)) return false;
     if (f.busca && !semAcento(t.desc + ' ' + (t.obs || '') + ' ' + (t.tags || '')).includes(semAcento(f.busca))) return false;
     return true;
@@ -92,6 +92,16 @@ function valorItem(t) {
 const pillDono = (A, id) => (id ? `<span class="pill ${A.classe(id)}">${esc(A.nome(id))}</span>` : '');
 const parcelaTxt = (t) => (t.totalParcelas > 1 ? ` ${t.parcela}/${t.totalParcelas}` : '');
 const tagsTxt = (t) => R.tagsDe(t).map((x) => '#' + esc(x)).join(' ');
+
+// Lista agrupada por dia, mais recente primeiro (cabeçalho "Sexta, 30/10")
+function porDia(A, itens, E) {
+  const grupos = [];
+  [...itens].sort((a, b) => (a.t.data < b.t.data ? 1 : a.t.data > b.t.data ? -1 : 0)).forEach((x) => {
+    const g = grupos[grupos.length - 1];
+    if (g && g.data === x.t.data) g.itens.push(x); else grupos.push({ data: x.t.data, itens: [x] });
+  });
+  return grupos.map((g) => `<div class="secao-titulo" style="margin-top:12px"><span>${g.data === A.hoje ? 'Hoje' : diaSemana(g.data).replace(/^./, (c) => c.toUpperCase())}, ${dataCurta(g.data)}</span></div><div class="lista">${g.itens.map((x) => itemTransacao(E, A, x)).join('')}</div>`).join('');
+}
 
 function itemTransacao(E, A, { k, t }) {
   const sub = [t.virtual ? 'Previsto · conta fixa' : '', A.cat(t.categoria) || (t.ehRenda ? 'Renda' : t.tipo === R.TIPO.fatura ? 'Pagamento de fatura' : t.tipo === R.TIPO.transf ? 'Transferência' : ''), A.origem(t), tagsTxt(t)].filter(Boolean).join(' · ');
@@ -159,7 +169,7 @@ const MENU = [
   ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes']]],
   ['Fechamento do mês', [['conferencia', 'Conferência', 'ok'], ['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
   ['Patrimônio', [['investimentos', 'Investimentos', 'investir']]],
-  ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['rendas', 'Rendas e divisão', 'rendas']]],
+  ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['tags', 'Tags', 'etiqueta'], ['rendas', 'Rendas e divisão', 'rendas']]],
   ['', [['mais', 'Configurações', 'config']]],
 ];
 
@@ -178,7 +188,7 @@ export function casca(E, titulo, corpo, opcoes = {}) {
     <a href="#/transacoes" ${rota === 'transacoes' ? 'aria-current="page"' : ''}>${ic('transacoes', 22)}Transações</a>
     <button class="mais-btn" data-a="menuLancar" aria-label="Novo lançamento">${ic('mais_', 26)}</button>
     <a href="#/acerto" ${rota === 'acerto' ? 'aria-current="page"' : ''}>${ic('acerto', 22)}Acerto</a>
-    <a href="#/mais" ${['mais', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
+    <a href="#/mais" ${['mais', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias', 'tags'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
   </nav>`;
   const voltar = opcoes.voltar ? `<a class="icone-btn so-cel" href="#/${opcoes.voltar}" aria-label="Voltar">${ic('voltar', 22)}</a>` : '';
   let banner = E.sessaoExpirada ? `<div class="banner">${ic('aviso', 18)}<span>A sessão do Google expirou.</span><button class="btn btn-peq btn-sec" data-a="renovar">Continuar</button></div>` : '';
@@ -391,7 +401,7 @@ export function telaFaturas(E) {
       ${sit !== 'Paga' && total > 0 ? `<button class="btn btn-pri btn-largo" style="margin-top:14px" data-a="pagarFatura" data-id="${fSel.id}">Pagar fatura</button>` : ''}
     </div>
     <div class="secao-titulo"><span>${compras.length} compra${compras.length === 1 ? '' : 's'}</span></div>
-    <div class="lista">${compras.length ? compras.map((t) => itemTransacao(E, A, { k: 'trn', t })).join('') : '<div class="vazio">Nenhuma compra nesta fatura.</div>'}</div>`;
+    ${compras.length ? porDia(A, compras.map((t) => ({ k: 'trn', t })), E) : '<div class="lista"><div class="vazio">Nenhuma compra nesta fatura.</div></div>'}`;
   return casca(E, 'Faturas', corpo, { voltar: 'mais' });
 }
 
@@ -441,7 +451,7 @@ export function telaMais(E) {
     <div class="secao-titulo"><span>Patrimônio</span></div>
     <div class="lista">${link('investimentos', 'investir', 'Investimentos', 'Valor líquido, IR e índices do dia')}</div>
     <div class="secao-titulo"><span>Cadastros</span></div>
-    <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('categorias', 'etiqueta', 'Categorias', 'Criar, renomear, mover e arquivar')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
+    <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('categorias', 'etiqueta', 'Categorias', 'Criar, renomear, mover e arquivar')}${link('tags', 'etiqueta', 'Tags', 'Renomear, juntar e excluir')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
     <div class="secao-titulo"><span>App</span></div>
     <div class="lista">
       <button class="item" data-a="alternarOcultar">${ic(E.ocultar ? 'olhoFechado' : 'olho', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">${E.ocultar ? 'Mostrar valores' : 'Esconder valores'}</span></span></button>
@@ -505,6 +515,29 @@ export function telaCategorias(E) {
   return casca(E, 'Categorias', corpo, { voltar: 'mais' });
 }
 
+export function telaTags(E) {
+  const uso = R.usoDasTags(E.db);
+  const corpo = `<p class="muted" style="font-size:13px">As tags são criadas nos lançamentos. Aqui dá para renomear (vale para todos os lançamentos que usam a tag), juntar duas tags dando o mesmo nome e excluir.</p>
+    <div class="lista" style="margin-top:12px">${uso.length ? uso.map((x) => `<button class="item" data-a="editarTag" data-v="${esc(x.tag)}"><span class="principal-txt"><span class="titulo">#${esc(x.tag)}</span><span class="sub">${x.n} lançamento${x.n === 1 ? '' : 's'}</span></span>${ic('lapis', 18, 'style="color:var(--muted)"')}</button>`).join('') : '<div class="vazio">Nenhuma tag ainda. Elas aparecem aqui depois que você usar uma num lançamento.</div>'}</div>`;
+  return casca(E, 'Tags', corpo, { voltar: 'mais' });
+}
+
+function modalTag(E, A, m) {
+  const f = m.form;
+  const novo = R.normTag(f.nome);
+  const uso = R.usoDasTags(E.db);
+  const n = (uso.find((x) => x.tag === f.tag) || {}).n || 0;
+  const outra = novo && novo !== f.tag ? uso.find((x) => x.tag === novo) : null;
+  const aviso = !novo ? '<div class="aviso-caixa" style="margin-top:10px">Digite um nome.</div>'
+    : outra ? `<div class="info-caixa" style="margin-top:10px">Já existe #${esc(novo)} (${outra.n} lançamento${outra.n === 1 ? '' : 's'}). Ao salvar, as duas viram uma só.</div>`
+    : novo !== f.tag ? `<div class="muted" style="font-size:13px;margin-top:8px">Vai mudar em ${n} lançamento${n === 1 ? '' : 's'}.</div>` : '';
+  const corpo = `<label class="campo"><span>Nome</span><input class="entrada" data-campo="nome" value="${esc(f.nome)}" autocomplete="off"></label>
+    ${aviso}
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarTag" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : outra ? 'Juntar as tags' : 'Renomear'}</button>
+    <button class="btn btn-perigo btn-largo" style="margin-top:10px" data-a="excluirTag" ${E.salvando ? 'aria-disabled="true"' : ''}>Excluir a tag de ${n} lançamento${n === 1 ? '' : 's'}</button>`;
+  return folha('#' + esc(f.tag), corpo);
+}
+
 function modalCategoria(E, A, m) {
   const f = m.form;
   const db = E.db;
@@ -548,7 +581,7 @@ export function modal(E) {
   const m = E.modal;
   if (!m) return '';
   const A = apoio(E);
-  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov }[m.tipo];
+  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, tag: modalTag, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov }[m.tipo];
   return fn ? fn(E, A, m) : '';
 }
 

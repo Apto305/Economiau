@@ -60,10 +60,29 @@ export function faturaPara(db, cartao, data, deslocamento = 0) {
   }
   let mesFecha = base ? mesDe(base.fechamento) : mesFechaPadrao(cartao, data);
   if (base && deslocamento === 0) return base;
+  // a fatura desse mês já existe mas fecha antes da compra (data editada): vai para a próxima
+  if (!base) { const ex = lista.find((f) => mesDe(f.fechamento) === mesFecha); if (ex && data >= ex.fechamento) mesFecha = somaMes(mesFecha, 1); }
   mesFecha = somaMes(mesFecha, deslocamento);
   const existente = lista.find((f) => mesDe(f.fechamento) === mesFecha);
   if (existente) return existente;
   return { id: null, cartao: cartao.id, status: 'Aberta', ...datasFatura(cartao, mesFecha) };
+}
+
+// Ao mudar o dia de fechamento/vencimento do cartão: faturas ainda não
+// conferidas que seguiam o dia antigo passam a seguir o novo
+export function faturasComDiaAntigo(db, antigo, novo) {
+  if (!antigo || (antigo.fecha === novo.fecha && antigo.vence === novo.vence)) return [];
+  const out = [];
+  faturasDoCartao(db, antigo.id).forEach((f) => {
+    if (f.conferida) return;
+    const mes = mesDe(f.fechamento);
+    const velho = datasFatura(antigo, mes), nova = datasFatura(novo, mes);
+    const o = { id: f.id };
+    if (f.fechamento === velho.fechamento && nova.fechamento !== f.fechamento) o.fechamento = nova.fechamento;
+    if (f.vencimento === velho.vencimento && nova.vencimento !== f.vencimento) { o.vencimento = nova.vencimento; o.competencia = nova.competencia; }
+    if (Object.keys(o).length > 1) out.push(o);
+  });
+  return out;
 }
 
 // Situação da fatura pela data de hoje e pelos pagamentos
@@ -432,9 +451,9 @@ export function previstosDoMes(db, mes) {
       if (r.inicio && data < r.inicio) continue;
       if (String(r.pulados || '').split(',').map((x) => x.trim()).includes(m)) continue; // mês pulado
       const ehRenda = r.tipo === 'Renda';
-      const feito = ehRenda
-        ? db.rendas.some((x) => x.recorrencia === r.id && mesDe(x.data) === m)
-        : db.transacoes.some((x) => x.recorrencia === r.id && mesDe(x.data) === m);
+      // "Mês da recorrência" diz de qual mês é o lançamento, mesmo pago em outro mês
+      const doMes = (x) => x.recorrencia === r.id && (x.mesRec || mesDe(x.data)) === m;
+      const feito = ehRenda ? db.rendas.some(doMes) : db.transacoes.some(doMes);
       if (feito) continue;
       let mesComp = m;
       let fatura = '';
@@ -457,11 +476,36 @@ export function comPrevistos(db, mes) {
   return { ...db, transacoes: [...db.transacoes, ...p.filter((x) => !x.ehRenda)], rendas: [...db.rendas, ...p.filter((x) => x.ehRenda)] };
 }
 
-export const tagsDe = (t) => String(t.tags || '').split(',').map((x) => x.trim()).filter(Boolean);
+// Tags: sempre minúsculas, sem # e sem espaços sobrando (assim "Viagem" e
+// "viagem " digitadas na planilha viram a mesma tag)
+export const normTag = (x) => String(x || '').replace(/#/g, ' ').trim().replace(/\s+/g, ' ').toLowerCase();
+export const tagsDe = (t) => [...new Set(String(t.tags || '').split(',').map(normTag).filter(Boolean))];
+const comTags = (db) => [['transacoes', db.transacoes], ['rendas', db.rendas], ['recorrencias', db.recorrencias || []]];
 export function todasAsTags(db) {
-  const s = new Set();
-  [...db.transacoes, ...db.rendas, ...(db.recorrencias || [])].forEach((t) => tagsDe(t).forEach((x) => s.add(x)));
-  return [...s].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return usoDasTags(db).map((x) => x.tag);
+}
+// Cada tag com quantos lançamentos (e contas fixas) a usam
+export function usoDasTags(db) {
+  const n = {};
+  comTags(db).forEach(([, lista]) => lista.forEach((t) => tagsDe(t).forEach((x) => (n[x] = (n[x] || 0) + 1))));
+  return Object.keys(n).sort((a, b) => a.localeCompare(b, 'pt-BR')).map((tag) => ({ tag, n: n[tag] }));
+}
+// Linhas a gravar para trocar a tag "de" por "para" (vazio = tirar a tag).
+// Também regrava as linhas em que a tag estava escrita diferente na planilha.
+export function trocarTag(db, de, para) {
+  const a = normTag(de), b = normTag(para);
+  const out = {};
+  comTags(db).forEach(([aba, lista]) => {
+    const linhas = [];
+    lista.forEach((t) => {
+      const atuais = tagsDe(t);
+      if (!atuais.includes(a)) return;
+      const novas = [...new Set(atuais.map((x) => (x === a ? b : x)).filter(Boolean))];
+      linhas.push({ id: t.id, tags: novas.join(', ') });
+    });
+    if (linhas.length) out[aba] = linhas;
+  });
+  return out;
 }
 
 // Compras no cartão que ficaram numa fatura que não cobre a data da compra

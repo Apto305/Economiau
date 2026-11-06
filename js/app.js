@@ -38,7 +38,7 @@ function desenhar() {
   else if (E.fase === 'erro') html = T.telaErro(E);
   else if (E.rota === 'perfis' || !E.perfil) html = T.telaPerfis(E);
   else {
-    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias };
+    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias, tags: T.telaTags };
     html = (telas[E.rota] || T.telaInicio)(E) + T.modal(E);
   }
   raiz.innerHTML = html + T.toast(E);
@@ -133,21 +133,37 @@ async function corrigirFaturas() {
     const pagou = R.pagadoresErrados(E.banco.db);
     if (pagou.length) await E.banco.atualizar('transacoes', pagou);
     if (meses.length) await E.banco.atualizar('faturas', meses);
-    const criadas = [];
-    const mudar = [];
-    for (const { t, k } of erradas) {
-      const c = R.porId(E.banco.db.cartoes, t.cartao);
-      const id = await garantirFatura(c, t.data, k, criadas);
-      if (id !== t.fatura) mudar.push({ id: t.id, fatura: id });
-    }
-    if (mudar.length) await E.banco.atualizar('transacoes', mudar);
-    if (!E.banco.demo) await E.banco.carregar();
+    const mudar = await moverComprasErradas();
     E.db = E.banco.db; E.rev++;
-    if (mudar.length) avisar(mudar.length === 1 ? 'Corrigi a fatura de 1 compra lançada com data antiga.' : 'Corrigi a fatura de ' + mudar.length + ' compras lançadas com data antiga.');
+    if (mudar) avisar(mudar === 1 ? 'Corrigi a fatura de 1 compra lançada com data antiga.' : 'Corrigi a fatura de ' + mudar + ' compras lançadas com data antiga.');
     else if (meses.length) avisar(meses.length === 1 ? 'Corrigi o mês de 1 fatura pela regra do cartão.' : 'Corrigi o mês de ' + meses.length + ' faturas pela regra do cartão.');
     else if (semPaga.length) avisar('Preenchi "Paga por" nos cartões. Confira em Contas e cartões.');
     desenhar();
   } catch (e) { tratarErro(e); }
+}
+
+async function gravarTags(mudancas) {
+  return salvar(async () => {
+    for (const [aba, linhas] of Object.entries(mudancas)) {
+      if (E.banco.temCampo(aba, 'tags')) await E.banco.atualizar(aba, linhas);
+    }
+  });
+}
+
+// Compras que estão numa fatura que não cobre a data delas vão para a fatura
+// certa (cria a fatura se preciso). Devolve quantas mudaram.
+async function moverComprasErradas(cartaoId) {
+  const erradas = R.comprasNaFaturaErrada(E.banco.db).filter(({ t }) => !cartaoId || t.cartao === cartaoId);
+  const criadas = [];
+  const mudar = [];
+  for (const { t, k } of erradas) {
+    const c = R.porId(E.banco.db.cartoes, t.cartao);
+    const id = await garantirFatura(c, t.data, k, criadas);
+    if (id !== t.fatura) mudar.push({ id: t.id, fatura: id });
+  }
+  if (mudar.length) await E.banco.atualizar('transacoes', mudar);
+  if (!E.banco.demo) await E.banco.carregar();
+  return mudar.length;
 }
 
 // Recarrega os dados depois de uma escrita (garante números de linha certos)
@@ -198,7 +214,7 @@ function mascarar(v, negativo) {
   return sinal + (parseInt(dig, 10) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function addTag(f, nome) {
-  const t = String(nome || '').replace(/[,#]/g, ' ').trim().replace(/\s+/g, ' ').toLowerCase();
+  const t = R.normTag(String(nome || '').replace(/,/g, ' '));
   if (t && !f.tags.includes(t)) f.tags.push(t);
   f.tagNova = '';
 }
@@ -268,6 +284,27 @@ const A = {
   // ---- categorias
   catTipo(d) { E.catTipo = d.v; desenhar(); },
   novaCategoria(d) { E.modal = { tipo: 'categoria', form: { nome: '', tipo: E.catTipo || 'Despesa', grupo: d.id || '', status: 'Ativo' } }; desenhar(); setTimeout(() => { const el = document.querySelector('[data-campo="nome"]'); if (el) el.focus(); }, 50); },
+  // ---- tags
+  editarTag(d) { E.modal = { tipo: 'tag', form: { tag: d.v, nome: d.v } }; desenhar(); },
+  async salvarTag() {
+    const f = formAtual();
+    const novo = R.normTag(f.nome);
+    if (!novo) return avisar('Digite um nome para a tag.', true);
+    if (novo === f.tag) { E.modal = null; desenhar(); return; }
+    const junta = R.todasAsTags(E.db).includes(novo);
+    const ok = await gravarTags(R.trocarTag(E.db, f.tag, novo));
+    if (ok) { E.modal = null; avisar(junta ? `Tags juntadas em #${novo}.` : `Tag renomeada para #${novo}.`); }
+  },
+  excluirTag() {
+    const f = E.modal.form;
+    E.modal = { tipo: 'confirmar', titulo: 'Excluir a tag?', texto: `#${f.tag} sai de todos os lançamentos que a usam. Os lançamentos continuam.`, alvo: f.tag, opcoes: [['confirmarExcluirTag', 'Excluir tag', true]] };
+    desenhar();
+  },
+  async confirmarExcluirTag() {
+    const tag = E.modal.alvo;
+    const ok = await gravarTags(R.trocarTag(E.db, tag, ''));
+    if (ok) { E.modal = null; if (E.filtros.tag === tag) E.filtros.tag = ''; avisar(`Tag #${tag} excluída.`); }
+  },
   editarCategoria(d) { const c = R.porId(E.db.categorias, d.id); E.modal = { tipo: 'categoria', form: { ...c, grupo: c.grupo || '' } }; desenhar(); },
   async salvarCategoria() {
     const f = E.modal.form;
@@ -531,7 +568,7 @@ const A = {
     const p = R.previstosDoMes(E.db, E.mes).find((x) => x.id === E.modal.id);
     if (!p) return;
     const tipo = p.ehRenda || p.tipo === R.TIPO.receita ? 'receita' : p.cartao ? 'cartao' : 'despesa';
-    const f = { ...novoForm(tipo), valor: valorTxt(p.valor), data: p.data, dataModo: 'outra', desc: p.desc || '', categoria: p.categoria || '', conta: p.conta || primeiraConta(p.dono), cartao: p.cartao || '', meio: p.meio && p.meio !== 'Crédito' ? p.meio : 'Pix', dono: p.dono, renda: !!p.ehRenda, tags: R.tagsDe(p), deduz: !!p.deduz, recorrencia: p.recorrencia };
+    const f = { ...novoForm(tipo), valor: valorTxt(p.valor), data: p.data, dataModo: 'outra', desc: p.desc || '', categoria: p.categoria || '', conta: p.conta || primeiraConta(p.dono), cartao: p.cartao || '', meio: p.meio && p.meio !== 'Crédito' ? p.meio : 'Pix', dono: p.dono, renda: !!p.ehRenda, tags: R.tagsDe(p), deduz: !!p.deduz, recorrencia: p.recorrencia, mesRec: p.id.split(':')[2] || '' };
     E.modal = { tipo: 'lancar', form: f }; desenhar();
   },
   editarFixa(d) {
@@ -635,14 +672,23 @@ const A = {
     const temPagaPor = E.banco.temCampo('cartoes', 'pagaPor');
     if (!temPagaPor) return avisar('Rode o script da planilha versão 1.11 para salvar "Paga por" no cartão.', true);
     const o = { nome: f.nome.trim(), dono: f.dono, pagaPor: f.pagaPor, fecha: f.fecha, vence: f.vence, rendaRef: f.rendaRef, limite: f.limite === '' ? '' : arred(lerValor(f.limite)), cor: f.cor, status: f.status || 'Ativo' };
+    const antigo = f.id ? { ...R.porId(E.db.cartoes, f.id) } : null;
+    let datas = [], movidas = 0;
     const ok = await salvar(async () => {
       if (f.id) await E.banco.atualizar('cartoes', [{ id: f.id, ...o }]); else await E.banco.inserir('cartoes', [o]);
+      // dia de fechamento/vencimento mudou: ajusta as faturas não conferidas e move as compras
+      datas = R.faturasComDiaAntigo(E.banco.db, antigo, { ...antigo, ...o });
+      if (datas.length) await E.banco.atualizar('faturas', datas);
       const meses = R.faturasComMesErrado(E.banco.db);
       if (meses.length) await E.banco.atualizar('faturas', meses);
       const pagou = R.pagadoresErrados(E.banco.db);
       if (pagou.length) await E.banco.atualizar('transacoes', pagou);
+      if (datas.length) movidas = await moverComprasErradas(f.id);
     });
-    if (ok) { E.modal = null; avisar('Cartão salvo.'); }
+    if (ok) {
+      E.modal = null;
+      avisar(datas.length ? `Cartão salvo. ${datas.length} fatura${datas.length === 1 ? '' : 's'} com as datas novas${movidas ? ` e ${movidas} compra${movidas === 1 ? '' : 's'} mudou${movidas === 1 ? '' : 'aram'} de fatura` : ''}.` : 'Cartão salvo.');
+    }
   },
   async arquivarCartao() {
     const f = E.modal.form;
@@ -724,6 +770,7 @@ async function gravarLancamento(f, valor) {
   const tags = (f.tags || []).join(', ');
   const extra = v18 ? { tags, deduz: !!f.deduz && f.dono !== famId } : {};
   const base = { data: f.data, desc: f.desc.trim(), obs: f.obs || '', criadoPor: E.email, status: futuro ? 'Previsto' : 'Confirmado', recorrencia: f.recorrencia || '', ...extra };
+  if (f.recorrencia && f.mesRec && E.banco.temCampo('transacoes', 'mesRec')) base.mesRec = f.mesRec;
   const ehRenda = f.tipo === 'receita' && f.renda && f.dono !== famId;
 
   // "Repetir todo mês": cria a conta fixa e liga o primeiro lançamento a ela
@@ -767,6 +814,7 @@ async function gravarLancamento(f, valor) {
     if (ehRenda) {
       const r = { data: f.data, pessoa: f.dono, desc: f.desc.trim(), valor, conta: c.id };
       if (E.banco.temCampo('rendas', 'tags')) { r.tags = tags; r.recorrencia = base.recorrencia || ''; }
+      if (f.recorrencia && f.mesRec && E.banco.temCampo('rendas', 'mesRec')) r.mesRec = f.mesRec;
       await E.banco.inserir('rendas', [r]);
     } else {
       await E.banco.inserir('transacoes', [{ ...base, deduz: false, valor, tipo: R.TIPO.receita, categoria: f.categoria, meio: 'Pix', conta: c.id, dono: f.dono, pagou: c.dono, divisao: f.dono === famId ? regra : '', pago: true }]);
@@ -809,6 +857,7 @@ async function atualizarLancamento(f, valor) {
     if (querRenda) {
       const o = { id: r.id, data: f.data, pessoa: f.dono, desc: f.desc.trim(), valor, conta: c ? c.id : '' };
       if (E.banco.temCampo('rendas', 'tags')) o.tags = tags;
+      if (r.recorrencia && !r.mesRec && mesDe(f.data) !== mesDe(r.data) && E.banco.temCampo('rendas', 'mesRec')) o.mesRec = mesDe(r.data);
       await E.banco.atualizar('rendas', [o]);
     } else {
       await E.banco.inserir('transacoes', [{ data: f.data, desc: f.desc.trim(), obs: f.obs || '', criadoPor: E.email, status: 'Confirmado', valor, tipo: R.TIPO.receita, categoria: f.categoria, meio: 'Pix', conta: c ? c.id : '', dono: f.dono, pagou: c ? c.dono : '', divisao: f.dono === famId ? (fam().divisaoPadrao || '') : '', pago: true, recorrencia: r.recorrencia || '', ...(v18 ? { tags } : {}) }]);
@@ -836,6 +885,8 @@ async function atualizarLancamento(f, valor) {
     await E.banco.atualizar('transacoes', alvo.map((x) => ({ id: x.id, ...comuns, valor, divisao: f.dono === famId ? (x.divisao || fam().divisaoPadrao) : '' })));
   } else {
     const o = { id: t.id, ...comuns, valor, data: f.data, divisao: f.dono === famId ? (t.divisao || (fam() || {}).divisaoPadrao || '') : '' };
+    // conta fixa com a data mudada para outro mês: continua sendo do mês original
+    if (t.recorrencia && !t.mesRec && mesDe(f.data) !== mesDe(t.data) && E.banco.temCampo('transacoes', 'mesRec')) o.mesRec = mesDe(t.data);
     if (f.tipo === 'cartao') {
       const c = R.porId(db.cartoes, f.cartao);
       o.cartao = c.id; o.pagou = R.pagaPorDe(db, c); o.fatura = await garantirFatura(c, f.data, 0, []);

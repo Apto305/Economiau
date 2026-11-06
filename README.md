@@ -4,7 +4,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 
 **App:** https://apto305.github.io/Economiau/
 
-## O que já faz (versão 1.5)
+## O que já faz (versão 1.6)
 
 - Entrar com Google (só os e-mails da aba Pessoas da planilha).
 - Escolher a planilha no seletor do Google: o app só enxerga essa planilha.
@@ -17,7 +17,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 - Conta da Família: o dinheiro dela é dos dois, pela divisão da família. Transferências e aportes para ela podem dividir no acerto ou ficar de fora (reserva de uma pessoa só).
 - O dono do lançamento já vem marcado com o perfil em que se entrou.
 - Contas fixas ("Repetir todo mês"): aparecem como previstas até alguém confirmar.
-- Tags livres em qualquer lançamento e filtros em Transações (tipo, categoria, conta, tag, busca, não conferidos).
+- Tags livres em qualquer lançamento (tela Tags para renomear, juntar e excluir) e filtros em Transações (tipo, categoria, conta, tag, busca, não conferidos).
 - "Gasto de trabalho: deduz da renda": o valor sai da renda de quem pagou antes da divisão.
 - Estorno no cartão (direto ou a partir de uma compra), com o crédito entrando na fatura e na divisão.
 - Categorias: criar grupos e subcategorias, renomear, mover de grupo, arquivar e excluir as sem uso; criar na hora do lançamento.
@@ -28,7 +28,7 @@ Economiau — controle financeiro da família Santos Mota. Gastos, cartões, met
 
 ## Como funciona
 
-O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.11 ou mais nova). Nada é guardado neste repositório.
+O app é só a interface (HTML, CSS e JavaScript, sem servidor). Os dados ficam na planilha da família no Google Drive, montada pelo script `montar-planilha.gs` (versão 1.12 ou mais nova). Nada é guardado neste repositório.
 
 Arquivos principais:
 

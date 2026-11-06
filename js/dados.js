@@ -16,7 +16,7 @@ const ABAS = {
       pago: ['Pago', 'b'], dataPag: ['Data do pagamento', 'd'], recorrencia: ['Recorrência (ID)'], status: ['Status'],
       conferido: ['Conferido', 'b'], obs: ['Observação'], criadoPor: ['Criado por'], criadoEm: ['Criado em', 'dh'],
       contaDestino: ['Conta de destino (ID)'], tags: ['Tags'], deduz: ['Deduz da renda', 'b'],
-      foraAcerto: ['Fora do acerto', 'b'],
+      foraAcerto: ['Fora do acerto', 'b'], mesRec: ['Mês da recorrência', 'm'],
     },
   },
   faturas: {
@@ -30,7 +30,7 @@ const ABAS = {
   rendas: {
     aba: 'Rendas', prefixo: 'REN', campos: {
       id: ['ID'], data: ['Data de recebimento', 'd'], pessoa: ['Pessoa (ID)'], desc: ['Descrição'], valor: ['Valor', 'n'],
-      conta: ['Conta (ID)'], criadoEm: ['Criado em', 'dh'], tags: ['Tags'], recorrencia: ['Recorrência (ID)'],
+      conta: ['Conta (ID)'], criadoEm: ['Criado em', 'dh'], tags: ['Tags'], recorrencia: ['Recorrência (ID)'], mesRec: ['Mês da recorrência', 'm'],
     },
   },
   recorrencias: {
