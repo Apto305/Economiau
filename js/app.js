@@ -269,6 +269,11 @@ const A = {
   mudarMes(d) { E.mes = somaMes(E.mes, Number(d.v)); desenhar(); },
   alternarOcultar() { E.ocultar = !E.ocultar; LS.set('ocultar', E.ocultar); desenhar(); },
   filtro(d) { E.filtros[d.c] = d.v; desenhar(); },
+  filtroQuem(d) {
+    const sel = T.quemSel(E.filtros);
+    E.filtros.quem = d.v === 'tudo' ? [] : sel.includes(d.v) ? sel.filter((x) => x !== d.v) : [...sel, d.v];
+    desenhar();
+  },
   abrirFiltros() { E.modal = { tipo: 'filtros' }; desenhar(); },
   limparFiltros() { E.filtros = { ...T.FILTROS_PADRAO, quem: E.filtros.quem, tipo: E.filtros.tipo }; if (E.modal && E.modal.tipo === 'filtros') E.modal = null; desenhar(); },
   filtroTag(d) { E.filtros.tag = E.filtros.tag === d.v ? '' : d.v; desenhar(); },

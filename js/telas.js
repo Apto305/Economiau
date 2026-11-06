@@ -59,17 +59,24 @@ export function itensDoMes(E, A, mes) {
 }
 
 const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-export const FILTROS_PADRAO = { quem: 'tudo', tipo: 'todos', grupo: '', origem: '', tag: '', naoConf: false, busca: '' };
+export const FILTROS_PADRAO = { quem: [], tipo: 'todos', grupo: '', origem: '', tag: '', naoConf: false, busca: '' };
 export const filtrosAtivos = (f) => ['grupo', 'origem', 'tag', 'busca'].filter((k) => f[k]).length + (f.naoConf ? 1 : 0);
 
-function filtrar(E, A, itens, tudoNaFamilia = false) {
+// "De quem": nenhum botão marcado = Tudo; botões marcados se somam
+// (ex.: Só minhas + Da família)
+export const quemSel = (f) => (Array.isArray(f.quem) ? f.quem : f.quem && f.quem !== 'tudo' ? [f.quem] : []);
+
+function filtrar(E, A, itens) {
   const f = E.filtros || FILTROS_PADRAO;
   const p = E.perfil, fam = A.fam;
+  const quem = quemSel(f);
   const ehEntre = (t) => t.dono && t.pagou && t.dono !== t.pagou && !(fam && t.dono === fam.id);
   return itens.filter(({ t }) => {
-    if (f.quem === 'entre') { if (!ehEntre(t)) return false; } else if (!R.visivelNoPerfil(E.db, t, p, tudoNaFamilia)) return false;
-    if (f.quem === 'minhas' && t.dono !== p) return false;
-    if (f.quem === 'familia' && !(fam && t.dono === fam.id)) return false;
+    const vis = R.visivelNoPerfil(E.db, t, p);
+    if (!quem.length) { if (!vis) return false; }
+    else if (!((quem.includes('minhas') && vis && t.dono === p)
+      || (quem.includes('familia') && vis && fam && t.dono === fam.id)
+      || (quem.includes('entre') && ehEntre(t)))) return false;
     if (f.tipo === 'despesas' && !R.ehGasto(t)) return false;
     if (f.tipo === 'receitas' && t.tipo !== R.TIPO.receita) return false;
     if (f.tipo === 'transf' && t.tipo !== R.TIPO.fatura && t.tipo !== R.TIPO.transf) return false;
@@ -272,7 +279,7 @@ export function telaTransacoes(E) {
   const A = apoio(E);
   const f = E.filtros || FILTROS_PADRAO;
   const todos = itensDoMes(E, A, E.mes);
-  const itens = filtrar(E, A, todos, true);
+  const itens = filtrar(E, A, todos);
   const ehFam = A.fam && E.perfil === A.fam.id;
   const QUEM = [['tudo', 'Tudo'], ['minhas', 'Só minhas'], ['familia', 'Da família'], ['entre', 'Entre vocês']].filter(([id]) => !(ehFam && (id === 'minhas' || id === 'familia')));
   const TIPOS = [['todos', 'Todos os tipos'], ['despesas', 'Despesas'], ['receitas', 'Receitas'], ['transf', 'Transferências']];
@@ -293,7 +300,7 @@ export function telaTransacoes(E) {
       <span class="muted">${dataCurta(t.data)}</span><span class="corta"><strong>${esc(t.desc || t.tipo)}${parcelaTxt(t)}</strong>${R.tagsDe(t).length ? ' <span class="muted" style="font-size:12px">' + tagsTxt(t) + '</span>' : ''}${t.virtual ? ' <span class="pill neutra" style="height:18px;font-size:11px">previsto</span>' : ''}</span><span class="corta soft">${esc(A.catCurta(t.categoria) || (t.ehRenda ? 'Renda' : ''))}</span><span class="corta soft">${esc(A.origem(t))}</span><span>${pillDono(A, t.dono)}</span><span class="soft">${esc(t.pagou ? A.nome(t.pagou) : '')}</span><span class="dir">${valorItem(t)}</span><span class="dir soft">${parte(t)}</span></button>`).join('') : '<div class="vazio">Nenhum lançamento com esses filtros.</div>'}
   </div>`;
   const n = filtrosAtivos(f);
-  const corpo = `<div class="chips rolavel" role="group" aria-label="De quem" style="margin-bottom:8px">${QUEM.map(([id, nm]) => `<button class="chip" aria-pressed="${f.quem === id}" data-a="filtro" data-c="quem" data-v="${id}">${nm}</button>`).join('')}</div>
+  const corpo = `<div class="chips rolavel" role="group" aria-label="De quem" style="margin-bottom:8px">${QUEM.map(([id, nm]) => `<button class="chip" aria-pressed="${id === 'tudo' ? !quemSel(f).length : quemSel(f).includes(id)}" data-a="filtroQuem" data-v="${id}">${nm}</button>`).join('')}</div>
     <div class="chips rolavel" role="group" aria-label="Tipo" style="margin-bottom:10px">${TIPOS.map(([id, nm]) => `<button class="chip" aria-pressed="${f.tipo === id}" data-a="filtro" data-c="tipo" data-v="${id}">${nm}</button>`).join('')}
       <button class="chip" aria-pressed="${n > 0}" data-a="abrirFiltros">${ic('camadas', 16, 'style="vertical-align:-3px;margin-right:4px"')}Filtros${n ? ' (' + n + ')' : ''}</button>
       ${n ? '<button class="link" style="margin-left:4px" data-a="limparFiltros">Limpar</button>' : ''}</div>

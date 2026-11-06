@@ -253,17 +253,11 @@ export function gastosDoPerfil(db, perfilId, mes, incluirPrevistos = false) {
 }
 
 // Lançamentos que o perfil enxerga
-// O que aparece em cada perfil: no de uma pessoa, o que é dela e o que é da
-// família (transferências e pagamentos de fatura também quando mexem numa
-// conta dela). No da Família: só o que é da família, ou tudo (tudo = true,
-// usado na aba Transações).
-export function visivelNoPerfil(db, t, perfilId, tudo = false) {
+export function visivelNoPerfil(db, t, perfilId) {
   const fam = familia(db);
   if (!perfilId) return true;
-  if (fam && perfilId === fam.id) return tudo || t.dono === fam.id;
-  if (t.dono === perfilId || (fam && t.dono === fam.id)) return true;
-  if (t.tipo === TIPO.transf || t.tipo === TIPO.fatura) return donoDaConta(db, t.conta) === perfilId || donoDaConta(db, t.contaDestino) === perfilId;
-  return false;
+  if (fam && perfilId === fam.id) return t.dono === fam.id; // perfil Família: só o que é da família
+  return t.dono === perfilId || t.pagou === perfilId || (fam && t.dono === fam.id) || t.destinoDono === perfilId;
 }
 
 // ------------------------------------------------------------------ saldos
