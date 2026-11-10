@@ -1,5 +1,5 @@
 // Telas do fechamento (conferência) e dos investimentos.
-import { esc, brl, brlSinal, dataCurta, dataBR, nomeMesAno, mesDe, lerValor, arred, hojeISO } from './util.js';
+import { esc, brl, brlSinal, dataCurta, dataBR, nomeMesAno, mesDe, lerValor, arred, hojeISO, agoraSerial } from './util.js';
 import { ic } from './icones.js';
 import * as R from './regras.js';
 import * as I from './invest.js';
@@ -137,6 +137,36 @@ const descTaxa = (inv) => {
   return inv.indexador + ' + ' + pct(t, 2);
 };
 
+// Data e hora de um número de série da planilha (fuso da planilha), "07/11 às 08:12"
+function quando(serial) {
+  const d = new Date(Date.UTC(1899, 11, 30) + Math.round(serial * 86400000));
+  const p2 = (n) => String(n).padStart(2, '0');
+  const dia = `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
+  const hora = `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
+  return (dia === hojeISO() ? 'hoje' : 'em ' + dataBR(dia).slice(0, 5)) + ' às ' + hora;
+}
+
+// O robô da planilha roda todo dia entre 8h e 9h: busca os índices do Banco
+// Central e recalcula os investimentos. Mostra quando ele rodou pela última vez
+// e se faltam índices para as movimentações mais antigas.
+export function statusRobo(E, C) {
+  const db = E.db;
+  const marcas = [...(db.indices || []).map((x) => Number(x.atualizadoEm) || 0), ...(db.investimentos || []).map((i) => Number(i.calculadoEm) || 0)];
+  const ult = Math.max(0, ...marcas);
+  const horas = ult ? (agoraSerial() - ult) * 24 : Infinity;
+  const datas = (db.movsInv || []).map((m) => m.data).filter(Boolean).sort();
+  const faltaDesde = datas.length && (!C.ind.dias.length || datas[0] < C.ind.dias[0]) ? datas[0] : '';
+  const comoLigar = 'Na planilha: Extensões → Apps Script, escolha a função <strong>ligarAtualizacaoDiaria</strong> e clique em Executar (liga o robô todo dia entre 8h e 9h). Para atualizar agora, execute <strong>atualizarTudo</strong>.';
+  let cls, titulo, txt;
+  if (!ult) { cls = 'erro'; titulo = 'Robô nunca rodou'; txt = comoLigar; }
+  else if (horas <= 30) { cls = 'ok'; titulo = 'Robô ativo'; txt = `Última atualização ${quando(ult)}.`; }
+  else if (horas <= 72) { cls = 'aviso'; titulo = 'Robô atrasado'; txt = `Última atualização ${quando(ult)}. ${comoLigar}`; }
+  else { cls = 'erro'; titulo = 'Robô parado'; txt = `Última atualização ${quando(ult)}. ${comoLigar}`; }
+  const cor = { ok: 'var(--receita)', aviso: 'var(--aviso, #E8B44B)', erro: 'var(--despesa)' }[cls];
+  const falta = faltaDesde ? `<div class="aviso-caixa" style="margin-top:10px">${ic('aviso', 18)}<span>Faltam os índices desde ${dataBR(faltaDesde)} (a movimentação mais antiga). Até o robô buscar, o rendimento antes de ${dataBR(C.ind.dias[0] || hojeISO())} não é contado e o valor fica abaixo do banco. O robô busca sozinho na próxima atualização; para buscar agora, execute <strong>atualizarTudo</strong> no Apps Script.</span></div>` : '';
+  return `<div class="cartao" style="margin-top:12px;display:flex;gap:12px;align-items:flex-start"><span style="width:10px;height:10px;border-radius:50%;background:${cor};margin-top:6px;flex:none${cls === 'ok' ? ';box-shadow:0 0 0 4px color-mix(in srgb, ' + cor + ' 25%, transparent)' : ''}"></span><span style="flex:1"><span style="display:block;font-weight:800">${titulo}</span><span class="muted" style="font-size:13px">${txt}</span></span></div>${falta}`;
+}
+
 export function telaInvestimentos(E) {
   const A = apoio(E);
   const db = E.db;
@@ -154,6 +184,7 @@ export function telaInvestimentos(E) {
       <div class="kpi"><div class="r">IPCA</div><div class="v">${pct(ref.ipca12, 2)}</div><div class="s">últimos ${ref.ipcaMeses} meses</div></div>
       <div class="kpi"><div class="r">Índices de</div><div class="v">${dataBR(ref.dia)}</div><div class="s">Banco Central, pelo robô da planilha</div></div>
     </div>` : `<div class="aviso-caixa" style="margin-top:12px">${ic('aviso', 18)}<span>A aba Índices está vazia. Na planilha, rode "Atualizar índices e investimentos" (ou espere o robô diário) para o app calcular os rendimentos.</span></div>`;
+  const robo = statusRobo(E, C);
   const item = (inv) => {
     const r = C.res[inv.id] || { liquido: 0, rendimento: 0, aplicado: 0 };
     return `<button class="item" data-a="abrirInvest" data-id="${inv.id}"><span class="principal-txt"><span class="titulo">${esc(inv.nome)}</span><span class="sub">${esc(inv.tipo || '')} · ${esc(descTaxa(inv))}${inv.vencimento ? ' · vence ' + dataBR(inv.vencimento) : ''}</span></span>
@@ -169,7 +200,7 @@ export function telaInvestimentos(E) {
       <div class="resumo-grande">${sens(brl(soma(meus, 'liquido')))}</div>
       <div class="muted" style="font-size:13px;margin-top:2px">aplicado ${sens(brl(soma(meus, 'aplicado')))} · rendeu ${sens(brl(soma(meus, 'rendimento')))} · IR e IOF estimados ${sens(brl(soma(meus, 'ir') + soma(meus, 'iof')))}</div>
       <p class="muted" style="font-size:12px;margin-top:8px">Valor líquido = o que cairia na conta se resgatasse tudo hoje.</p></div>
-    ${indices}
+    ${robo}${indices}
     <button class="btn btn-pri btn-largo" style="margin-top:12px" data-a="novoInvest">${ic('mais_', 18)}Novo investimento</button>
     <div class="grade"><div>${listas}</div>${famBloco ? `<div>${famBloco}</div>` : ''}</div>
     ${encerrados.length ? `<div class="secao-titulo"><span>Resgatados ou arquivados</span></div><div class="lista">${encerrados.map((i) => `<button class="item" style="opacity:.6" data-a="abrirInvest" data-id="${i.id}"><span class="principal-txt"><span class="titulo">${esc(i.nome)}</span><span class="sub">${esc(i.tipo || '')}</span></span></button>`).join('')}</div>` : ''}`;
@@ -195,8 +226,11 @@ export function modalInvest(E, A, m) {
   const atualIR = faixa ? faixa.atual : null;
   const tabelaIR = isento ? '<div class="pill ok" style="margin-top:8px">Isento de IR</div>' : `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px">${faixas.map(([d, t], i) => `<div style="padding:8px;border-radius:10px;text-align:center;font-size:12px;${atualIR !== null && Math.abs(parseFloat(t.replace(',', '.')) - atualIR) < 0.01 ? 'background:var(--accent-soft);color:var(--accent-txt);font-weight:800' : 'background:var(--surf2);color:var(--muted)'}"><div>${t}</div><div>${i === 0 ? 'até 180 d' : i === 1 ? '181–360 d' : i === 2 ? '361–720 d' : 'mais de 720 d'}</div></div>`).join('')}</div>
     ${faixa && faixa.data ? `<p class="muted" style="font-size:12.5px;margin-top:8px">O aporte mais antigo cai para ${pct(faixa.proxima, faixa.proxima % 1 ? 1 : 0)} em ${dataBR(faixa.data)}.</p>` : ''}`;
-  const movs = r.movs.map((x) => `<div class="item" style="padding:10px 0"><span class="principal-txt"><span class="titulo">${x.tipo === 'Aporte' ? 'Aporte' : 'Resgate'}</span><span class="sub">${dataBR(x.data)} · ${esc(A.nomeConta(x.conta) || '')}${x.tipo === 'Resgate' && x.liquido ? ' · caiu ' + brl(x.liquido) : ''}</span></span><span class="valor ${x.tipo === 'Aporte' ? '' : 'rec'}">${x.tipo === 'Aporte' ? '' : '− '}${sens(brl(x.valor))}</span><button class="icone-btn" data-a="excluirMov" data-id="${x.id}" aria-label="Excluir movimentação">${ic('lixo', 18)}</button></div>`).join('');
-  const robo = inv.liquido !== '' && inv.liquido !== undefined && inv.calculadoEm ? `<p class="muted" style="font-size:12px;margin-top:6px">O robô da planilha calculou ${brl(inv.liquido)} líquido na última atualização.</p>` : '';
+  const movs = r.movs.map((x) => x.tipo === 'Ajuste'
+    ? `<div class="item" style="padding:10px 0"><span class="principal-txt"><span class="titulo">Correção pelo banco</span><span class="sub">${dataBR(x.data)} · rendimento ${Number(x.valor) >= 0 ? 'a mais' : 'a menos'}${x.obs ? ' · ' + esc(x.obs) : ''}</span></span><span class="valor ${Number(x.valor) >= 0 ? 'rec' : ''}">${sens(brlSinal(Number(x.valor)))}</span><button class="icone-btn" data-a="excluirMov" data-id="${x.id}" aria-label="Excluir correção">${ic('lixo', 18)}</button></div>`
+    : `<div class="item" style="padding:10px 0"><span class="principal-txt"><span class="titulo">${x.tipo === 'Aporte' ? 'Aporte' : 'Resgate'}</span><span class="sub">${dataBR(x.data)} · ${esc(A.nomeConta(x.conta) || '')}${x.tipo === 'Resgate' && x.liquido ? ' · caiu ' + brl(x.liquido) : ''}</span></span><span class="valor ${x.tipo === 'Aporte' ? '' : 'rec'}">${x.tipo === 'Aporte' ? '' : '− '}${sens(brl(x.valor))}</span><button class="icone-btn" data-a="excluirMov" data-id="${x.id}" aria-label="Excluir movimentação">${ic('lixo', 18)}</button></div>`).join('');
+  const robo = (inv.liquido !== '' && inv.liquido !== undefined && inv.calculadoEm ? `<p class="muted" style="font-size:12px;margin-top:6px">O robô da planilha calculou ${brl(inv.liquido)} líquido na última atualização.</p>` : '')
+    + (inv.valorBanco !== '' && inv.valorBanco !== undefined && inv.valorBancoEm ? `<p class="muted" style="font-size:12px;margin-top:2px">No banco: ${brl(inv.valorBanco)} em ${dataBR(inv.valorBancoEm)} (informado por vocês).</p>` : '');
   const corpo = `<div class="pill ${A.classe(inv.titular)}">${esc(A.nome(inv.titular))}</div>
     <div class="muted" style="font-size:13px;margin-top:10px">Valor líquido hoje</div>
     <div class="resumo-grande">${sens(brl(r.liquido))}</div>
@@ -205,6 +239,7 @@ export function modalInvest(E, A, m) {
       ${linha('Valor bruto', sens(brl(r.bruto)))}${linha('Aplicado', sens(brl(r.aplicado)))}${linha('Rendimento bruto', '<span class="rec">+ ' + sens(brl(r.rendimento)) + '</span>')}
       ${linha('IOF', r.iof ? '− ' + sens(brl(r.iof)) : 'nenhum (mais de 30 dias)')}${linha('IR estimado', isento ? 'isento' : '− ' + sens(brl(r.ir)))}${linha('<strong>Líquido</strong>', '<strong>' + sens(brl(r.liquido)) + '</strong>')}
     </div>
+    <button class="btn btn-borda btn-largo" style="margin-top:10px" data-a="ajusteInv" data-id="${inv.id}">${ic('lapis', 18)}O banco mostra outro valor? Corrigir</button>
     <h2 style="font-size:15px;font-weight:800;margin-top:18px">Imposto de renda</h2>${tabelaIR}
     <h2 style="font-size:15px;font-weight:800;margin-top:18px">Dados</h2>
     <div>${linha('Emissor', esc(inv.emissor || '—'))}${linha('Aplicado em', inv.dataAplic ? dataBR(inv.dataAplic) : '—')}${linha('Vencimento', inv.vencimento ? dataBR(inv.vencimento) : '—')}${linha('Liquidez', esc(inv.liquidez || '—'))}${linha('Garantia', ['CDB', 'LCI', 'LCA', 'Poupança'].includes(inv.tipo) ? 'FGC até R$ 250 mil por instituição' : inv.tipo && inv.tipo.startsWith('Tesouro') ? 'Tesouro Nacional' : '—')}</div>
@@ -282,6 +317,36 @@ function blocoAcertoMov(E, A, inv, f, valor) {
     : (paraFamilia ? `Reserva que ${esc(A.nome(pessoa))} guarda ${so} para a família: não mexe no acerto.` : `${esc(A.nome(pessoa))} pegou de volta dinheiro que tinha guardado ${so}: não mexe no acerto.`);
   const aviso = E.banco.temCampo('movsInv', 'foraAcerto') ? '' : '<div class="aviso-caixa" style="margin-top:8px">Rode o script da planilha versão 1.11 para poder deixar fora do acerto. Por enquanto divide.</div>';
   return `<div class="cartao" style="margin-top:14px;background:var(--bg);display:flex;gap:12px;align-items:center"><span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">Dividir no acerto</span><span class="muted" style="font-size:12.5px">${txt}</span></span><button class="chip" role="switch" aria-checked="${!f.foraAcerto}" data-a="movForaAcerto" aria-label="Dividir no acerto">${!f.foraAcerto ? 'Sim' : 'Não'}</button></div>${aviso}`;
+}
+
+// Corrigir o rendimento pelo valor que o banco mostra hoje
+export function modalAjusteInv(E, A, m) {
+  const f = m.form;
+  const inv = R.porId(E.db.investimentos, f.investimento);
+  const C = calcInvest(E);
+  const r = C.res[inv.id];
+  const base = f.base || 'liquido';
+  const alvo = lerValor(f.valor);
+  const hoje = hojeISO();
+  const movs = (E.db.movsInv || []).filter((x) => x.investimento === inv.id);
+  const ajuste = alvo > 0 ? I.ajusteParaBater(inv, movs, C.ind, hoje, alvo, base) : 0;
+  const temCol = E.banco.temCampo('investimentos', 'valorBanco');
+  const datas = movs.map((x) => x.data).filter(Boolean).sort();
+  const faltaIdx = datas.length && (!C.ind.dias.length || datas[0] < C.ind.dias[0]);
+  const sinal = (v) => (v >= 0 ? '+ ' + brl(v) : brlSinal(v));
+  const prev = alvo > 0 ? `<div class="cartao" style="margin-top:14px;background:var(--bg);font-size:14px">
+      <div style="display:flex;justify-content:space-between"><span class="muted">No app hoje (${base === 'liquido' ? 'líquido' : 'bruto'})</span><strong>${brl(r[base])}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted">No banco</span><strong>${brl(alvo)}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted">Correção de rendimento (bruto)</span><strong class="${ajuste >= 0 ? 'rec' : 'desp'}">${sinal(ajuste)}</strong></div>
+      <p class="muted" style="font-size:12.5px;margin-top:8px">${Math.abs(ajuste) < 0.01 ? 'Já está igual ao banco.' : `O app lança uma correção de ${sinal(ajuste)} no rendimento com data de hoje. O valor aplicado não muda; o IR e o IOF são recalculados. A partir de amanhã o app volta a render pelos índices, já com a correção.`}</p></div>` : '';
+  const corpo = `<p class="muted" style="margin:8px 4px 0;font-size:13.5px">${esc(inv.nome)} · no app hoje: líquido ${brl(r.liquido)} · bruto ${brl(r.bruto)}</p>
+    ${temCol ? '' : '<div class="aviso-caixa" style="margin-top:10px">Rode o script da planilha versão 1.13 para poder corrigir pelo banco (o robô precisa saber tratar a correção).</div>'}
+    ${faltaIdx ? `<div class="aviso-caixa" style="margin-top:10px">Ainda faltam os índices desde ${dataBR(datas[0])}. Espere o robô buscá-los (ou execute atualizarTudo no Apps Script) antes de corrigir: senão a correção cobre a falta dos índices e, quando eles chegarem, o valor passa do banco.</div>` : ''}
+    <div class="campo"><span>O valor do banco é</span><div class="chips"><button class="chip" aria-pressed="${base === 'liquido'}" data-a="ajusteBase" data-v="liquido">Líquido (já sem IR)</button><button class="chip" aria-pressed="${base === 'bruto'}" data-a="ajusteBase" data-v="bruto">Bruto</button></div></div>
+    <label class="campo"><span>Quanto o banco mostra hoje (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
+    ${prev}
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarAjusteInv" ${E.salvando || !temCol || faltaIdx ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : 'Corrigir'}</button>`;
+  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Corrigir pelo banco"><div class="alca"></div><h2>Corrigir pelo banco</h2>${corpo}</div>`;
 }
 
 export function modalMov(E, A, m) {

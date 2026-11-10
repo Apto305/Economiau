@@ -48,6 +48,7 @@ const ABAS = {
       liquidez: ['Liquidez'], status: ['Status'], criadoEm: ['Criado em', 'dh'], arquivadoEm: ['Arquivado em', 'dh'],
       bruto: ['Valor bruto', 'n'], rendimento: ['Rendimento bruto', 'n'], iof: ['IOF estimado', 'n'], ir: ['IR estimado', 'n'],
       liquido: ['Valor líquido', 'n'], calculadoEm: ['Calculado em', 'dh'],
+      valorBanco: ['Valor no banco', 'n'], valorBancoEm: ['Valor no banco em', 'd'],
     },
   },
   movsInv: {
@@ -78,7 +79,7 @@ const ABAS = {
   },
   categorias: {
     aba: 'Categorias', prefixo: 'CAT', campos: {
-      id: ['ID'], nome: ['Nome'], tipo: ['Tipo'], status: ['Status'], criadoEm: ['Criado em', 'dh'], grupo: ['Grupo (ID)'],
+      id: ['ID'], nome: ['Nome'], tipo: ['Tipo'], status: ['Status'], criadoEm: ['Criado em', 'dh'], grupo: ['Grupo (ID)'], ordem: ['Ordem', 'n'],
     },
   },
   pessoas: {
@@ -360,8 +361,8 @@ function lerIndices(linhas) {
   if (!linhas.length) return [];
   const t = (linhas[0] || []).map((x) => String(x).trim());
   const c = (n) => t.indexOf(n);
-  const [cd, cc, cs, ci] = [c('Data'), c('CDI (% ao dia)'), c('Selic (% ao dia)'), c('IPCA (% ao mês)')];
-  return linhas.slice(1).map((l) => ({ dia: serialParaISO(l[cd]), cdi: l[cc] ?? '', selic: l[cs] ?? '', ipca: l[ci] ?? '' })).filter((x) => x.dia);
+  const [cd, cc, cs, ci, ca] = [c('Data'), c('CDI (% ao dia)'), c('Selic (% ao dia)'), c('IPCA (% ao mês)'), c('Atualizado em')];
+  return linhas.slice(1).map((l) => ({ dia: serialParaISO(l[cd]), cdi: l[cc] ?? '', selic: l[cs] ?? '', ipca: l[ci] ?? '', atualizadoEm: ca >= 0 && typeof l[ca] === 'number' ? l[ca] : '' })).filter((x) => x.dia);
 }
 
 export { ABAS };

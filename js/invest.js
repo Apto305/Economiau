@@ -64,6 +64,11 @@ function aplicarMovimento(lotes, mov) {
   if (mov.tipo === 'Aporte') { lotes.push({ dia: mov.dia, principal: mov.valor, valor: mov.valor }); return; }
   const total = lotes.reduce((t, l) => t + l.valor, 0);
   if (total <= 0) return;
+  if (mov.tipo === 'Ajuste') { // correção pelo banco: muda só o rendimento
+    const g = Math.max(0, 1 + mov.valor / total);
+    lotes.forEach((l) => { l.valor *= g; });
+    return;
+  }
   const f = Math.min(1, mov.valor / total);
   lotes.forEach((l) => { l.principal *= (1 - f); l.valor *= (1 - f); });
 }
@@ -72,7 +77,7 @@ export const ehIsento = (inv) => inv.isento === 'Sim' || ['LCI', 'LCA', 'Poupan�
 
 // inv: registro da aba Investimentos; movs: [{data, tipo, valor}]
 export function calcular(inv, movs, ind, hoje) {
-  const ordem = movs.filter((m) => m.data && m.valor).map((m) => ({ dia: m.data, tipo: m.tipo, valor: Number(m.valor) }))
+  const ordem = movs.filter((m) => m.data && Number(m.valor)).map((m) => ({ dia: m.data, tipo: m.tipo, valor: Number(m.valor) }))
     .sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : (a.tipo === 'Aporte' ? -1 : 1)));
   const lotes = [];
   let i = 0;
@@ -141,3 +146,24 @@ export function proximaFaixa(lotes, hoje) {
 }
 
 export { mesDe, somaMes };
+
+// Quanto de rendimento bruto precisa entrar (ou sair) hoje para o app bater
+// com o valor que o banco mostra. "base" = 'liquido' ou 'bruto'.
+export function ajusteParaBater(inv, movs, ind, hoje, alvo, base = 'liquido') {
+  const valorCom = (d) => {
+    const extra = d ? [...movs, { data: hoje, tipo: 'Ajuste', valor: d }] : movs;
+    return calcular(inv, extra, ind, hoje)[base];
+  };
+  let d = 0, v = valorCom(0);
+  for (let k = 0; k < 6 && Math.abs(alvo - v) >= 0.005; k++) {
+    // sensibilidade numérica: quanto o valor muda para cada R$ 1 de ajuste
+    const passo = Math.max(1, Math.abs(alvo - v));
+    const s = (valorCom(d + passo) - v) / passo || 1;
+    d += (alvo - v) / s;
+    v = valorCom(d);
+  }
+  // em centavos, o que chega mais perto do banco
+  const c = arred(d);
+  return [c, arred(c - 0.01), arred(c + 0.01), arred(c - 0.02), arred(c + 0.02)]
+    .map((x) => [x, Math.abs(valorCom(x) - alvo)]).sort((a, b) => a[1] - b[1])[0][0];
+}

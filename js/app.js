@@ -73,6 +73,7 @@ async function iniciar() {
 
 function lerRota() {
   const r = (location.hash || '').replace(/^#\/?/, '') || 'inicio';
+  if (r === 'faturas' && E.rota !== 'faturas') E.faturaSel = null; // abre sempre na fatura em aberto
   E.rota = r;
   E.modal = null; E.modalPai = null;
 }
@@ -296,7 +297,7 @@ const A = {
     E.modal = { tipo: 'lancar', form: f }; desenhar();
   },
   // ---- categorias
-  catTipo(d) { E.catTipo = d.v; desenhar(); },
+  catTipo(d) { E.catOrdem = null; E.catTipo = d.v; desenhar(); },
   novaCategoria(d) { E.modal = { tipo: 'categoria', form: { nome: '', tipo: E.catTipo || 'Despesa', grupo: d.id || '', status: 'Ativo' } }; desenhar(); setTimeout(() => { const el = document.querySelector('[data-campo="nome"]'); if (el) el.focus(); }, 50); },
   // ---- tags
   editarTag(d) { E.modal = { tipo: 'tag', form: { tag: d.v, nome: d.v } }; desenhar(); },
@@ -318,6 +319,36 @@ const A = {
     const tag = E.modal.alvo;
     const ok = await gravarTags(R.trocarTag(E.db, tag, ''));
     if (ok) { E.modal = null; if (E.filtros.tag === tag) E.filtros.tag = ''; avisar(`Tag #${tag} excluída.`); }
+  },
+  // ---- ordem das categorias (rascunho até "Salvar ordem")
+  catOrdemIniciar() {
+    if (!E.banco.temCampo('categorias', 'ordem')) return avisar('Rode o script da planilha versão 1.13 para poder reordenar as categorias.', true);
+    const tipo = E.catTipo || 'Despesa';
+    const ordem = {};
+    const ativas = E.db.categorias.filter((c) => c.tipo === tipo && R.ativo(c));
+    R.porOrdem(E.db, ativas.filter((c) => !c.grupo)).forEach((g, i) => {
+      ordem[g.id] = i + 1;
+      R.porOrdem(E.db, ativas.filter((c) => c.grupo === g.id)).forEach((c, k) => (ordem[c.id] = k + 1));
+    });
+    E.catOrdem = { tipo, ordem };
+    desenhar();
+  },
+  catOrdemCancelar() { E.catOrdem = null; desenhar(); },
+  catMover(d) {
+    const o = E.catOrdem.ordem;
+    const c = R.porId(E.db.categorias, d.id);
+    const irmaos = R.porOrdem(E.db, E.db.categorias.filter((x) => x.tipo === c.tipo && (x.grupo || '') === (c.grupo || '') && R.ativo(x)), o);
+    const i = irmaos.indexOf(c), j = i + Number(d.v);
+    if (j < 0 || j >= irmaos.length) return;
+    [irmaos[i], irmaos[j]] = [irmaos[j], irmaos[i]];
+    irmaos.forEach((x, k) => (o[x.id] = k + 1));
+    desenhar();
+  },
+  async catOrdemSalvar() {
+    const o = E.catOrdem.ordem;
+    const mudar = Object.entries(o).filter(([id, n]) => (R.porId(E.db.categorias, id) || {}).ordem !== n).map(([id, ordem]) => ({ id, ordem }));
+    const ok = mudar.length ? await salvar(() => E.banco.atualizar('categorias', mudar)) : true;
+    if (ok) { E.catOrdem = null; avisar('Ordem salva.'); desenhar(); }
   },
   editarCategoria(d) { const c = R.porId(E.db.categorias, d.id); E.modal = { tipo: 'categoria', form: { ...c, grupo: c.grupo || '' } }; desenhar(); },
   async salvarCategoria() {
@@ -376,7 +407,7 @@ const A = {
   repetirPor(d) { E.modal.form.repetirMeses = Number(d.v) || 0; desenhar(); },
   repetirMeses(d) { const f = E.modal.form; f.repetirMeses = Math.max(1, Math.min(120, (Number(f.repetirMeses) || 1) + Number(d.v))); desenhar(); },
   pularMes() {
-    const p = R.previstosDoMes(E.db, E.mes).find((x) => x.id === E.modal.id);
+    const p = R.acharPrevisto(E.db, E.modal.id);
     if (!p) return;
     if (!E.banco.temCampo('recorrencias', 'pulados')) { avisar('Rode o script da planilha versão 1.9 para poder pular um mês.', true); return; }
     E.modal = { tipo: 'confirmar', titulo: 'Pular este mês?', alvo: { rec: p.recorrencia, mes: mesDe(p.data) },
@@ -500,6 +531,30 @@ const A = {
     });
     if (ok) { E.modal = total ? null : { tipo: 'invest', id: inv.id }; E.modalPai = null; avisar(total ? 'Resgate total registrado.' : f.tipo === 'Aporte' ? 'Aporte registrado.' : 'Resgate registrado.'); }
   },
+  ajusteInv(d) {
+    E.modalPai = E.modal;
+    E.modal = { tipo: 'ajusteInv', form: { investimento: d.id, valor: '', base: 'liquido' } };
+    desenhar();
+  },
+  ajusteBase(d) { E.modal.form.base = d.v; desenhar(); },
+  async salvarAjusteInv() {
+    const f = formAtual();
+    const alvo = arred(lerValor(f.valor));
+    if (!(alvo > 0)) return avisar('Digite o valor que o banco mostra.', true);
+    if (!E.banco.temCampo('investimentos', 'valorBanco')) return avisar('Rode o script da planilha versão 1.13 primeiro.', true);
+    const inv = R.porId(E.db.investimentos, f.investimento);
+    const C = T2.calcInvest(E);
+    const hoje = hojeISO();
+    const movs = (E.db.movsInv || []).filter((x) => x.investimento === inv.id);
+    const datas = movs.map((x) => x.data).filter(Boolean).sort();
+    if (datas.length && (!C.ind.dias.length || datas[0] < C.ind.dias[0])) return avisar('Espere o robô buscar os índices que faltam antes de corrigir.', true);
+    const ajuste = I.ajusteParaBater(inv, movs, C.ind, hoje, alvo, f.base || 'liquido');
+    const ok = await salvar(async () => {
+      if (Math.abs(ajuste) >= 0.01) await E.banco.inserir('movsInv', [{ investimento: inv.id, data: hoje, tipo: 'Ajuste', valor: ajuste, conta: '', obs: `banco mostrou ${brl(alvo)} ${f.base === 'bruto' ? 'bruto' : 'líquido'}` }]);
+      await E.banco.atualizar('investimentos', [{ id: inv.id, valorBanco: alvo, valorBancoEm: hoje }]);
+    });
+    if (ok) { E.modal = { tipo: 'invest', id: inv.id }; E.modalPai = null; avisar(Math.abs(ajuste) >= 0.01 ? 'Rendimento corrigido pelo banco.' : 'Já estava igual ao banco.'); }
+  },
   excluirMov(d) {
     const mv = R.porId(E.db.movsInv, d.id);
     E.modalPai = E.modal;
@@ -580,7 +635,7 @@ const A = {
     desenhar();
   },
   confirmarPrevisto() {
-    const p = R.previstosDoMes(E.db, E.mes).find((x) => x.id === E.modal.id);
+    const p = R.acharPrevisto(E.db, E.modal.id);
     if (!p) return;
     const tipo = p.ehRenda || p.tipo === R.TIPO.receita ? 'receita' : p.cartao ? 'cartao' : 'despesa';
     const f = { ...novoForm(tipo), valor: valorTxt(p.valor), data: p.data, dataModo: 'outra', desc: p.desc || '', categoria: p.categoria || '', conta: p.conta || primeiraConta(p.dono), cartao: p.cartao || '', meio: p.meio && p.meio !== 'Crédito' ? p.meio : 'Pix', dono: p.dono, renda: !!p.ehRenda, tags: R.tagsDe(p), deduz: !!p.deduz, recorrencia: p.recorrencia, mesRec: p.id.split(':')[2] || '' };
@@ -796,7 +851,7 @@ async function gravarLancamento(f, valor) {
     const [rec] = await E.banco.inserir('recorrencias', [{
       desc: f.desc.trim(), valor, categoria: f.categoria || '', meio: f.tipo === 'cartao' ? 'Crédito' : f.tipo === 'despesa' ? f.meio : 'Pix',
       cartao: f.tipo === 'cartao' ? f.cartao : '', conta: f.tipo === 'cartao' ? '' : f.conta, dia: Number(f.data.slice(8, 10)), dono: f.dono,
-      pagou: origem ? (f.tipo === 'cartao' ? R.pagaPorDe(db, origem) : origem.dono) : '', divisao: f.dono === famId ? regra : '', inicio: f.data.slice(0, 8) + '01',
+      pagou: origem ? (f.tipo === 'cartao' ? R.pagaPorDe(db, origem) : origem.dono) : '', divisao: f.dono === famId ? regra : '', inicio: somaMes(mesDe(f.data), 1) + '-01', // previstas só a partir do mês seguinte
       fim: Number(f.repetirMeses) > 0 ? dataNoMes(somaMes(mesDe(f.data), Number(f.repetirMeses) - 1), 31) : '', status: 'Ativo', varia: 'Não',
       tipo: ehRenda ? 'Renda' : f.tipo === 'receita' ? 'Receita' : 'Despesa', tags, deduz: !!extra.deduz,
     }]);

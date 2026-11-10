@@ -499,10 +499,33 @@ export function previstosDoMes(db, mes) {
   return lista;
 }
 
+// Um previsto pelo id ("VREC:REC-0001:2026-11"), de qualquer mês
+export function acharPrevisto(db, id) {
+  const m = String(id).split(':')[2];
+  if (!m) return null;
+  for (let k = 0; k <= 3; k++) { const p = previstosDoMes(db, somaMes(m, k)).find((x) => x.id === id); if (p) return p; }
+  return null;
+}
+
+// Previstos de um cartão entre dois meses (inclusive), cada um uma vez
+export function previstosDoCartao(db, cartaoId, de, ate) {
+  const out = [];
+  for (let m = de; m <= ate; m = somaMes(m, 1)) previstosDoMes(db, m).forEach((p) => { if (p.cartao === cartaoId && !p.ehRenda) out.push(p); });
+  return out;
+}
+
 // Cópia dos dados com os previstos do mês incluídos (para telas e somas de previsão)
 export function comPrevistos(db, mes) {
   const p = previstosDoMes(db, mes);
   return { ...db, transacoes: [...db.transacoes, ...p.filter((x) => !x.ehRenda)], rendas: [...db.rendas, ...p.filter((x) => x.ehRenda)] };
+}
+
+// Categorias na ordem escolhida (coluna Ordem); sem ordem, na ordem da planilha.
+// "rasc" = ordem provisória enquanto a pessoa reordena na tela.
+export function porOrdem(db, lista, rasc) {
+  const pos = new Map(db.categorias.map((c, i) => [c.id, i]));
+  const ord = (c) => { const v = rasc && rasc[c.id] !== undefined ? rasc[c.id] : c.ordem; return v === '' || v === undefined || v === null || isNaN(v) ? Infinity : Number(v); };
+  return [...lista].sort((a, b) => (ord(a) - ord(b)) || (pos.get(a.id) - pos.get(b.id)));
 }
 
 // Tags: sempre minúsculas, sem # e sem espaços sobrando (assim "Viagem" e

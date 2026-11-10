@@ -388,33 +388,56 @@ export function telaFaturas(E) {
   const dono = R.porId(donos, E.faturasDono) || (cartaoAntes && R.porId(donos, cartaoAntes.dono)) || R.porId(donos, E.perfil) || donos[0];
   const meus = dono ? cartoes.filter((c) => c.dono === dono.id) : cartoes;
   const sel = R.porId(meus, E.cartaoSel) || meus[0];
-  const lista = R.faturasDoCartao(db, sel.id);
-  const atual = R.faturaAtual(db, sel, A.hoje);
-  const fSel = R.porId(lista, E.faturaSel) || atual || lista[lista.length - 1];
+  // faturas da planilha + faturas que ainda não existem (a de hoje sem compras
+  // e as que só têm contas fixas previstas)
+  const reais = R.faturasDoCartao(db, sel.id);
+  const porVenc = new Map(reais.map((f) => [mesDe(f.vencimento), f]));
+  const virt = new Map();
+  const faturaDe = (data) => {
+    const f = R.faturaPara(db, sel, data);
+    if (f.id) return f;
+    const k = mesDe(f.vencimento);
+    if (porVenc.has(k)) return porVenc.get(k);
+    if (!virt.has(k)) virt.set(k, { ...f, id: 'VFAT:' + sel.id + ':' + k, virtual: true });
+    return virt.get(k);
+  };
+  const mesHoje = mesDe(A.hoje);
+  const prevPor = {};
+  R.previstosDoCartao(db, sel.id, somaMes(mesHoje, -2), somaMes(mesHoje, 3)).forEach((p) => {
+    const alvo = (p.fatura && R.porId(reais, p.fatura)) || faturaDe(p.data);
+    (prevPor[alvo.id] = prevPor[alvo.id] || []).push(p);
+  });
+  const aberta = faturaDe(A.hoje);
+  const lista = [...reais, ...virt.values()].sort((a, b) => (a.fechamento < b.fechamento ? -1 : 1));
+  const fSel = R.porId(lista, E.faturaSel) || aberta || lista[lista.length - 1];
   const tabsDono = donos.length > 1 ? `<div class="donos" role="tablist" style="grid-template-columns:repeat(${donos.length},1fr);margin-bottom:12px">${donos.map((p) => `<button role="tab" class="${A.classe(p.id)}" aria-checked="${p.id === dono.id}" data-a="selDonoFatura" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>` : '';
   const tabsCartao = `${tabsDono}<div class="chips" role="tablist" style="margin-bottom:10px">${meus.map((c) => `<button class="chip" role="tab" aria-pressed="${c.id === sel.id}" data-a="selCartao" data-id="${c.id}">${esc(c.nome)}</button>`).join('')}</div>`;
   if (!fSel) return casca(E, 'Faturas', tabsCartao + '<div class="vazio">Este cartão ainda não tem compras.</div>', { voltar: 'mais' });
   const i = lista.indexOf(fSel);
   const ant = lista[i - 1], prox = lista[i + 1];
-  const compras = db.transacoes.filter((t) => t.fatura === fSel.id && R.ehGasto(t)).sort((a, b) => (a.data < b.data ? 1 : -1));
-  const total = R.totalFatura(db, fSel.id);
-  const sit = R.situacaoFatura(db, fSel, A.hoje);
+  const compras = fSel.virtual ? [] : db.transacoes.filter((t) => t.fatura === fSel.id && R.ehGasto(t)).sort((a, b) => (a.data < b.data ? 1 : -1));
+  const previstas = prevPor[fSel.id] || [];
+  const totPrev = arred(previstas.reduce((s, t) => s + t.valor, 0));
+  const total = fSel.virtual ? 0 : R.totalFatura(db, fSel.id);
+  const sit = fSel.virtual ? (A.hoje < fSel.fechamento ? 'Aberta' : 'Fechada') : R.situacaoFatura(db, fSel, A.hoje);
+  const ehAberta = fSel.id === aberta.id;
   const famT = compras.filter((t) => A.fam && t.dono === A.fam.id).reduce((s, t) => s + (t.tipo === R.TIPO.estorno ? -t.valor : t.valor), 0);
-  const pagos = db.transacoes.filter((t) => t.tipo === R.TIPO.fatura && t.fatura === fSel.id).reduce((s, t) => s + t.valor, 0);
+  const pagos = fSel.virtual ? 0 : db.transacoes.filter((t) => t.tipo === R.TIPO.fatura && t.fatura === fSel.id).reduce((s, t) => s + t.valor, 0);
   const corpo = `${tabsCartao}
     <div class="cartao">
       <div style="display:flex;align-items:center;gap:8px">
         <button class="icone-btn" data-a="selFatura" data-id="${ant ? ant.id : ''}" ${ant ? '' : 'disabled style="opacity:.3"'} aria-label="Fatura anterior">${ic('esq', 18)}</button>
-        <div style="flex:1;text-align:center"><div style="font-weight:800">Fatura de ${dataBR(fSel.vencimento)}</div><div class="muted" style="font-size:12.5px">conta como gasto de ${nomeMesAno(fSel.mesRenda).toLowerCase()}</div></div>
+        <div style="flex:1;text-align:center"><div style="font-weight:800">Fatura de ${dataBR(fSel.vencimento)}${ehAberta ? ' <span class="pill neutra" style="vertical-align:middle">em aberto</span>' : ''}</div><div class="muted" style="font-size:12.5px">conta como gasto de ${nomeMesAno(fSel.mesRenda).toLowerCase()}</div></div>
         <button class="icone-btn" data-a="selFatura" data-id="${prox ? prox.id : ''}" ${prox ? '' : 'disabled style="opacity:.3"'} aria-label="Próxima fatura">${ic('seta', 18)}</button>
       </div>
-      <div style="display:flex;align-items:flex-end;gap:12px;margin-top:14px"><div style="flex:1"><div class="muted" style="font-size:13px">${sit === 'Aberta' ? 'Valor até agora' : 'Valor da fatura'}</div><div class="resumo-grande">${sens(brl(total))}</div></div><span class="pill ${sit === 'Paga' ? 'ok' : sit === 'Fechada' ? 'aviso' : 'neutra'}">${sit}</span></div>
-      <div class="muted" style="font-size:13px;margin-top:6px">Fecha ${dataBR(fSel.fechamento)} · vence ${dataBR(fSel.vencimento)} <button class="link" data-a="alterarFechamento" data-id="${fSel.id}">alterar</button></div>
-      <div class="chips" style="margin-top:10px"><span class="pill fam">Família ${sens(brl(famT))}</span><span class="pill neutra">Pessoal ${sens(brl(total - famT))}</span>${pagos ? `<span class="pill ok">Pago ${sens(brl(pagos))}</span>` : ''}</div>
-      ${sit !== 'Paga' && total > 0 ? `<button class="btn btn-pri btn-largo" style="margin-top:14px" data-a="pagarFatura" data-id="${fSel.id}">Pagar fatura</button>` : ''}
+      <div style="display:flex;align-items:flex-end;gap:12px;margin-top:14px"><div style="flex:1"><div class="muted" style="font-size:13px">${sit === 'Aberta' ? 'Valor até agora' : 'Valor da fatura'}</div><div class="resumo-grande">${sens(brl(total))}</div>${totPrev ? `<div class="muted" style="font-size:13px">+ ${sens(brl(totPrev))} previsto em contas fixas · total ${sens(brl(total + totPrev))}</div>` : ''}</div><span class="pill ${sit === 'Paga' ? 'ok' : sit === 'Fechada' ? 'aviso' : 'neutra'}">${sit}</span></div>
+      <div class="muted" style="font-size:13px;margin-top:6px">Fecha ${dataBR(fSel.fechamento)} · vence ${dataBR(fSel.vencimento)} ${fSel.virtual ? '' : `<button class="link" data-a="alterarFechamento" data-id="${fSel.id}">alterar</button>`}</div>
+      ${compras.length ? `<div class="chips" style="margin-top:10px"><span class="pill fam">Família ${sens(brl(famT))}</span><span class="pill neutra">Pessoal ${sens(brl(total - famT))}</span>${pagos ? `<span class="pill ok">Pago ${sens(brl(pagos))}</span>` : ''}</div>` : ''}
+      ${!fSel.virtual && sit !== 'Paga' && total > 0 ? `<button class="btn btn-pri btn-largo" style="margin-top:14px" data-a="pagarFatura" data-id="${fSel.id}">Pagar fatura</button>` : ''}
     </div>
     <div class="secao-titulo"><span>${compras.length} compra${compras.length === 1 ? '' : 's'}</span></div>
-    ${compras.length ? porDia(A, compras.map((t) => ({ k: 'trn', t })), E) : '<div class="lista"><div class="vazio">Nenhuma compra nesta fatura.</div></div>'}`;
+    ${compras.length ? porDia(A, compras.map((t) => ({ k: 'trn', t })), E) : '<div class="lista"><div class="vazio">Nenhuma compra nesta fatura ainda.</div></div>'}
+    ${previstas.length ? `<div class="secao-titulo" style="margin-top:18px"><span>${previstas.length} prevista${previstas.length === 1 ? '' : 's'} (contas fixas)</span><span>${sens(brl(totPrev))}</span></div>${porDia(A, previstas.map((t) => ({ k: 'prev', t })), E)}` : ''}`;
   return casca(E, 'Faturas', corpo, { voltar: 'mais' });
 }
 
@@ -483,8 +506,10 @@ export function telaFixas(E) {
   const db = E.db;
   const v18 = E.banco.temCampo('recorrencias', 'tipo');
   const lista = (db.recorrencias || []).slice().sort((a, b) => a.dia - b.dia);
-  const ativas = lista.filter((r) => R.recorrenciaAtiva(r, E.mes));
-  const outras = lista.filter((r) => !R.recorrenciaAtiva(r, E.mes));
+  // ativa no mês, ou criada neste mês (o primeiro lançamento já existe; as previstas começam no mês seguinte)
+  const ligada = (r) => [...db.transacoes, ...db.rendas].some((x) => x.recorrencia === r.id && (x.mesRec || mesDe(x.data)) === E.mes);
+  const ativas = lista.filter((r) => R.recorrenciaAtiva(r, E.mes) || (R.ativo(r) && ligada(r)));
+  const outras = lista.filter((r) => !ativas.includes(r));
   const prev = R.previstosDoMes(db, E.mes);
   const item = (r) => {
     const origem = r.cartao ? (A.cartao(r.cartao) || {}).nome : A.nomeConta(r.conta);
@@ -509,11 +534,29 @@ export function usoCategoria(db, id) {
 export function telaCategorias(E) {
   const db = E.db;
   const tipo = E.catTipo || 'Despesa';
-  const grupos = db.categorias.filter((c) => c.tipo === tipo && !c.grupo).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const rasc = E.catOrdem && E.catOrdem.tipo === tipo ? E.catOrdem.ordem : null;
+  const grupos = R.porOrdem(db, db.categorias.filter((c) => c.tipo === tipo && !c.grupo), rasc);
   const ativos = grupos.filter(R.ativo), arquivados = db.categorias.filter((c) => c.tipo === tipo && !R.ativo(c));
   const usoTxt = (id) => { const n = usoCategoria(db, id); return n ? n + ' lançamento' + (n === 1 ? '' : 's') : 'sem uso'; };
+  const setas = (c, irmaos, peq) => {
+    const i = irmaos.indexOf(c);
+    const b = (v, rot, off, rotulo) => `<button class="icone-btn" style="transform:rotate(${rot}deg)${off ? ';opacity:.25' : ''}" data-a="catMover" data-id="${c.id}" data-v="${v}" ${off ? 'disabled' : ''} aria-label="${rotulo} ${esc(c.nome)}">${ic('seta', peq ? 16 : 18)}</button>`;
+    return `<span style="display:flex;gap:4px;flex:none">${b(-1, -90, i === 0, 'Subir')}${b(1, 90, i === irmaos.length - 1, 'Descer')}</span>`;
+  };
+  if (rasc) {
+    const blocoOrd = (g) => {
+      const subs = R.porOrdem(db, db.categorias.filter((c) => c.grupo === g.id && R.ativo(c)), rasc);
+      return `<div class="bloco"><div class="lista">
+        <div class="item"><span class="principal-txt"><span class="titulo" style="font-weight:800">${esc(g.nome)}</span></span>${setas(g, ativos)}</div>
+        ${subs.map((c) => `<div class="item" style="padding-left:32px"><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span></span>${setas(c, subs, true)}</div>`).join('')}
+      </div></div>`;
+    };
+    const corpoOrd = `<div class="cartao" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 260px;font-size:13.5px">Use as setas para mudar a ordem em que ${tipo === 'Despesa' ? 'os grupos e as subcategorias aparecem' : 'as categorias aparecem'} na hora de lançar.</span><button class="btn btn-borda btn-peq" data-a="catOrdemCancelar">Cancelar</button><button class="btn btn-pri btn-peq" data-a="catOrdemSalvar" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : 'Salvar ordem'}</button></div>
+      <div class="grade" style="margin-top:4px">${ativos.map(blocoOrd).join('')}</div>`;
+    return casca(E, 'Categorias', corpoOrd, { voltar: 'mais' });
+  }
   const bloco = (g) => {
-    const subs = db.categorias.filter((c) => c.grupo === g.id && R.ativo(c)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    const subs = R.porOrdem(db, db.categorias.filter((c) => c.grupo === g.id && R.ativo(c)));
     return `<div class="bloco"><div class="lista">
       <button class="item" data-a="editarCategoria" data-id="${g.id}"><span class="principal-txt"><span class="titulo" style="font-weight:800">${esc(g.nome)}</span><span class="sub">${tipo === 'Despesa' && subs.length ? subs.length + ' subcategoria' + (subs.length === 1 ? '' : 's') + ' · ' + (() => { const n = usoCategoria(db, g.id) + subs.reduce((t, c) => t + usoCategoria(db, c.id), 0); return n ? n + ' lançamento' + (n === 1 ? '' : 's') + ' no grupo' : 'sem uso'; })() : usoTxt(g.id)}</span></span>${ic('lapis', 18, 'style="color:var(--muted)"')}</button>
       ${subs.map((c) => `<button class="item" style="padding-left:32px" data-a="editarCategoria" data-id="${c.id}"><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${usoTxt(c.id)}</span></span>${ic('lapis', 16, 'style="color:var(--muted)"')}</button>`).join('')}
@@ -521,7 +564,7 @@ export function telaCategorias(E) {
     </div></div>`;
   };
   const corpo = `<div class="abas" role="tablist" style="max-width:420px">${['Despesa', 'Receita'].map((t) => `<button role="tab" aria-selected="${tipo === t}" data-a="catTipo" data-v="${t}">${t === 'Despesa' ? 'Despesas' : 'Receitas'}</button>`).join('')}</div>
-    <button class="btn btn-pri btn-peq" style="margin-top:12px" data-a="novaCategoria" data-id="">${ic('mais_', 16)}${tipo === 'Despesa' ? 'Novo grupo' : 'Nova categoria'}</button>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-pri btn-peq" data-a="novaCategoria" data-id="">${ic('mais_', 16)}${tipo === 'Despesa' ? 'Novo grupo' : 'Nova categoria'}</button><button class="btn btn-borda btn-peq" data-a="catOrdemIniciar">${ic('trocar', 16)}Reordenar</button></div>
     <p class="muted" style="font-size:13px;margin-top:10px">${tipo === 'Despesa' ? 'Os grupos (Moradia, Alimentação…) são usados nas metas e nos relatórios; as subcategorias detalham o gasto.' : 'Receitas não têm grupos.'} Toque para renomear, mover ou arquivar.</p>
     <div class="grade" style="margin-top:4px">${ativos.map(bloco).join('') || '<div class="vazio">Nenhuma categoria.</div>'}</div>
     ${arquivados.length ? `<div class="secao-titulo"><span>Arquivadas</span></div><div class="lista">${arquivados.map((c) => `<button class="item" style="opacity:.6" data-a="editarCategoria" data-id="${c.id}"><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${c.grupo ? 'em ' + esc((R.porId(db.categorias, c.grupo) || {}).nome || '') : 'grupo'} · ${usoTxt(c.id)}</span></span></button>`).join('')}</div>` : ''}`;
@@ -594,7 +637,7 @@ export function modal(E) {
   const m = E.modal;
   if (!m) return '';
   const A = apoio(E);
-  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, tag: modalTag, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov }[m.tipo];
+  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, tag: modalTag, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov, ajusteInv: T2.modalAjusteInv }[m.tipo];
   return fn ? fn(E, A, m) : '';
 }
 
@@ -776,13 +819,19 @@ function modalMenu(E, A) {
 function modalFiltros(E, A) {
   const f = E.filtros;
   const db = E.db;
-  const grupos = db.categorias.filter((c) => !c.grupo && R.ativo(c));
-  const origens = [...db.contas.filter(R.ativo).map((c) => [c.id, A.nomeConta(c.id)]), ...db.cartoes.filter(R.ativo).map((c) => [c.id, c.nome + ' (cartão)'])];
+  const grupos = R.porOrdem(db, db.categorias.filter((c) => !c.grupo && R.ativo(c)));
+  // contas e cartões separados por pessoa
+  const donosOrig = [...A.ps, A.fam].filter(Boolean);
+  const blocoOrig = (p) => {
+    const ops = [...db.contas.filter((c) => R.ativo(c) && c.dono === p.id).map((c) => [c.id, A.nomeConta(c.id)]), ...db.cartoes.filter((c) => R.ativo(c) && c.dono === p.id).map((c) => [c.id, c.nome + ' (cartão)'])];
+    return ops.length ? `<optgroup label="${p.tipo === 'Família' ? 'Da família' : (A.classe(p.id) === 'gio' ? 'Da ' : 'Do ') + esc(p.nome)}">${ops.map(([id, n]) => `<option value="${id}" ${f.origem === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '';
+  };
+  const semDono = [...db.contas.filter((c) => R.ativo(c) && !donosOrig.some((p) => p.id === c.dono)).map((c) => [c.id, A.nomeConta(c.id)]), ...db.cartoes.filter((c) => R.ativo(c) && !donosOrig.some((p) => p.id === c.dono)).map((c) => [c.id, c.nome + ' (cartão)'])];
   const tags = R.todasAsTags(db);
   const corpo = `
     <label class="campo"><span>Buscar na descrição</span><input class="entrada" data-filtro="busca" value="${esc(f.busca)}" placeholder="Ex.: mercado" autocomplete="off"></label>
     <label class="campo"><span>Categoria</span><select class="entrada" data-filtro="grupo"><option value="">Todas</option>${grupos.map((g) => `<option value="${g.id}" ${f.grupo === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}</select></label>
-    <label class="campo"><span>Conta ou cartão</span><select class="entrada" data-filtro="origem"><option value="">Todos</option>${origens.map(([id, n]) => `<option value="${id}" ${f.origem === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+    <label class="campo"><span>Conta ou cartão</span><select class="entrada" data-filtro="origem"><option value="">Todos</option>${donosOrig.map(blocoOrig).join('')}${semDono.map(([id, n]) => `<option value="${id}" ${f.origem === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
     <div class="campo"><span>Tag</span>${tags.length ? `<div class="chips">${tags.map((x) => `<button class="chip" aria-pressed="${f.tag === x}" data-a="filtroTag" data-v="${esc(x)}">#${esc(x)}</button>`).join('')}</div>` : '<div class="muted" style="font-size:13px">Nenhuma tag criada ainda. Elas aparecem aqui depois que você usar uma num lançamento.</div>'}</div>
     <div class="campo" style="display:flex;align-items:center;gap:10px"><span style="flex:1;margin:0;font-size:15px;color:var(--text)">Só os não conferidos</span><button class="chip" aria-pressed="${f.naoConf}" data-a="filtroNaoConf">${f.naoConf ? 'Sim' : 'Não'}</button></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px"><button class="btn btn-borda" data-a="limparFiltros">Limpar</button><button class="btn btn-pri" data-a="fecharModal">Ver resultados</button></div>`;
@@ -810,9 +859,9 @@ function modalSeletor(E, A, m) {
   let corpo = '';
   if (m.campo === 'categoria') {
     const tipo = f.tipo === 'receita' ? 'Receita' : 'Despesa';
-    const grupos = db.categorias.filter((c) => c.tipo === tipo && !c.grupo && R.ativo(c));
+    const grupos = R.porOrdem(db, db.categorias.filter((c) => c.tipo === tipo && !c.grupo && R.ativo(c)));
     corpo = grupos.map((g) => {
-      const subs = db.categorias.filter((c) => c.grupo === g.id && R.ativo(c));
+      const subs = R.porOrdem(db, db.categorias.filter((c) => c.grupo === g.id && R.ativo(c)));
       const btn = (c, nome) => `<button class="chip" style="margin:4px 4px 0 0" aria-pressed="${f.categoria === c.id}" data-a="escolher" data-id="${c.id}">${esc(nome)}</button>`;
       return `<div style="margin:14px 4px 0"><div class="muted" style="font-size:12.5px;font-weight:700">${esc(g.nome)}</div><div>${subs.length ? subs.map((s) => btn(s, s.nome)).join('') : btn(g, g.nome)}</div></div>`;
     }).join('');
@@ -841,8 +890,7 @@ function modalDetalhe(E, A, m) {
   const db = E.db;
   let t, tt;
   if (m.k === 'prev') {
-    const lista = R.previstosDoMes(db, E.mes);
-    t = lista.find((x) => x.id === m.id);
+    t = R.acharPrevisto(db, m.id);
     if (!t) return '';
     tt = t.ehRenda ? { ...t, dono: t.pessoa } : t;
   } else if (m.k === 'ren') {
