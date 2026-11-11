@@ -49,6 +49,7 @@ const ABAS = {
       bruto: ['Valor bruto', 'n'], rendimento: ['Rendimento bruto', 'n'], iof: ['IOF estimado', 'n'], ir: ['IR estimado', 'n'],
       liquido: ['Valor líquido', 'n'], calculadoEm: ['Calculado em', 'dh'],
       valorBanco: ['Valor no banco', 'n'], valorBancoEm: ['Valor no banco em', 'd'],
+      ordemResgate: ['Resgate sai de'],
     },
   },
   movsInv: {

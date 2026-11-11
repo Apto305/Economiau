@@ -118,7 +118,11 @@ async function carregarPlanilha(id) {
   E.fase = 'pronto'; E.erro = ''; E.sessaoExpirada = false;
   if (!E.db.contas.some(R.ativo) && !LS.get('primeiro-ok-' + id)) { if (E.perfil) ir('primeiro'); }
   desenhar();
-  corrigirFaturas();
+  await corrigirFaturas();
+  try {
+    const n = await corrigirResgates();
+    if (n) { E.db = E.banco.db; E.rev++; avisar(n === 1 ? 'Recalculei 1 resgate de investimento pela posição do dia.' : 'Recalculei ' + n + ' resgates de investimento pela posição do dia.'); }
+  } catch (e) { /* tenta de novo na próxima abertura */ }
 }
 
 // Conserta compras no cartão que ficaram numa fatura que não cobre a data
@@ -158,6 +162,28 @@ async function gravarTags(mudancas) {
       if (E.banco.temCampo(aba, 'tags')) await E.banco.atualizar(aba, linhas);
     }
   });
+}
+
+// Resgates lançados pelo valor que caiu na conta: recalcula quanto saiu do
+// investimento pela posição do dia (corrige resgates gravados por versões
+// antigas, que usavam a posição do dia em que foram lançados). Devolve quantos mudaram.
+async function corrigirResgates() {
+  const db = E.banco.db;
+  if (!E.banco.temCampo('movsInv', 'liquido') || !db.indices || !db.indices.length) return 0;
+  const ind = I.prepararIndices(db.indices);
+  if (!ind.dias.length) return 0;
+  const mudar = [];
+  (db.investimentos || []).forEach((inv) => {
+    const movs = (db.movsInv || []).filter((m) => m.investimento === inv.id).map((m) => ({ ...m }));
+    if (movs.some((m) => m.data < ind.dias[0])) return; // faltam índices: espera o robô
+    movs.filter((m) => m.tipo === 'Resgate' && Number(m.liquido) > 0).sort((a, b) => (a.data < b.data ? -1 : 1)).forEach((m) => {
+      const outros = movs.filter((x) => x !== m);
+      const { bruto } = I.brutoDoResgate(inv, outros, ind, m.data, Number(m.liquido));
+      if (Math.abs(bruto - Number(m.valor)) >= 0.01) { m.valor = bruto; mudar.push({ id: m.id, valor: bruto }); }
+    });
+  });
+  if (mudar.length) await E.banco.atualizar('movsInv', mudar);
+  return mudar.length;
 }
 
 // Compras que estão numa fatura que não cobre a data delas vão para a fatura
@@ -488,10 +514,11 @@ const A = {
     if (!f.nome.trim()) return avisar('Dê um nome para o investimento.', true);
     const fixo = T2.indexadorFixo(f.tipo);
     const o = { nome: f.nome.trim(), emissor: (f.emissor || '').trim(), tipo: f.tipo, titular: f.titular, indexador: fixo || f.indexador, taxa: lerValor(f.taxa), dataAplic: f.dataAplic || hojeISO(), vencimento: f.vencimento || '', liquidez: f.liquidez, isento: ['LCI', 'LCA', 'Poupança'].includes(f.tipo) ? 'Sim' : f.isento };
+    if (E.banco.temCampo('investimentos', 'ordemResgate')) o.ordemResgate = f.ordemResgate || I.ORDENS_RESGATE[0];
     const editando = E.modal.editando;
     const valor = arred(lerValor(f.valor));
     const ok = await salvar(async () => {
-      if (editando) { await E.banco.atualizar('investimentos', [{ id: editando, ...o }]); return; }
+      if (editando) { await E.banco.atualizar('investimentos', [{ id: editando, ...o }]); await corrigirResgates(); return; }
       const [inv] = await E.banco.inserir('investimentos', [{ ...o, status: 'Ativo' }]);
       if (valor > 0) await E.banco.inserir('movsInv', [{ investimento: inv.id, data: o.dataAplic, tipo: 'Aporte', valor, conta: f.conta || '', obs: '', ...foraMov(o.titular, f) }]);
     });
@@ -521,10 +548,12 @@ const A = {
         await E.banco.inserir('movsInv', [{ investimento: inv.id, data: f.data, tipo: 'Aporte', valor, conta: f.conta || '', ...foraMov(inv.titular, f) }]);
         return;
       }
-      const r = T2.calcInvest(E).res[inv.id];
-      const fr = Math.min(1, valor / r.liquido);
-      total = fr >= 0.999;
-      const bruto = arred(total ? r.bruto : r.bruto * fr);
+      // quanto saiu do investimento naquele dia (pela posição do dia e pela ordem de resgate)
+      const C = T2.calcInvest(E);
+      const movs = (E.db.movsInv || []).filter((x) => x.investimento === inv.id);
+      const res = I.brutoDoResgate(inv, movs, C.ind, f.data, valor);
+      total = res.total;
+      const bruto = res.bruto;
       const temLiq = E.banco.temCampo('movsInv', 'liquido');
       await E.banco.inserir('movsInv', [{ investimento: inv.id, data: f.data, tipo: 'Resgate', valor: temLiq ? bruto : valor, conta: f.conta || '', obs: temLiq ? '' : 'Valor líquido recebido', ...(temLiq ? { liquido: valor } : {}), ...foraMov(inv.titular, f) }]);
       if (total) await E.banco.atualizar('investimentos', [{ id: inv.id, status: 'Arquivado' }]);
