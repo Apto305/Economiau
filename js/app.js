@@ -450,8 +450,53 @@ const A = {
     if (ok) { E.modal = null; avisar('Mês pulado.'); }
   },
   // ---- conferência
-  abrirConfFatura(d) { E.confFatura = d.id; desenhar(); window.scrollTo(0, 0); },
-  fecharConfFatura() { E.confFatura = null; desenhar(); },
+  abrirConfFatura(d) { E.confFatura = d.id; E.confConta = null; desenhar(); window.scrollTo(0, 0); },
+  abrirConfConta(d) { E.confConta = d.id; E.confFatura = null; desenhar(); window.scrollTo(0, 0); },
+  fecharConfFatura() { E.confFatura = null; E.confConta = null; desenhar(); },
+  // ---- conferência das contas
+  async confItem(d) {
+    const aba = { trn: 'transacoes', ren: 'rendas', inv: 'movsInv' }[d.k];
+    const o = R.porId(E.db[aba] || [], d.id);
+    if (!o || !E.banco.temCampo(aba, 'conferido')) return;
+    const ok = await salvar(() => E.banco.atualizar(aba, [{ id: o.id, conferido: !o.conferido }]));
+    if (ok) desenhar();
+  },
+  async marcarTodosConta(d) {
+    const c = R.porId(E.db.contas, d.id);
+    const st = T2.estadoConta(E, c, E.mes);
+    const por = { trn: [], ren: [], inv: [] };
+    st.itens.filter((x) => !x.ok && x.pode).forEach((x) => por[x.k].push({ id: x.id, conferido: true }));
+    if (!por.trn.length && !por.ren.length && !por.inv.length) return;
+    const ok = await salvar(async () => {
+      if (por.trn.length) await E.banco.atualizar('transacoes', por.trn);
+      if (por.ren.length) await E.banco.atualizar('rendas', por.ren);
+      if (por.inv.length) await E.banco.atualizar('movsInv', por.inv);
+    });
+    if (ok) desenhar();
+  },
+  async concluirConta(d) {
+    const c = R.porId(E.db.contas, d.id);
+    const st = T2.estadoConta(E, c, E.mes);
+    if (!st.pronta) return;
+    if (!E.banco.temCampo('confContas', 'conta')) { E.contasOk[st.chave] = true; LS.set('contasOk', E.contasOk); avisar('Conta conferida (só neste aparelho: rode o script 1.15).'); return; }
+    const o = { conta: c.id, mes: E.mes, saldoBanco: st.banco, dataSaldo: st.dataSaldo, conferida: true };
+    const ok = await salvar(() => (st.reg ? E.banco.atualizar('confContas', [{ id: st.reg.id, ...o }]) : E.banco.inserir('confContas', [o])));
+    if (ok) { delete E.saldoBanco[st.chave]; avisar('Conta conferida.'); }
+  },
+  async desconferirConta(d) {
+    const c = R.porId(E.db.contas, d.id);
+    const st = T2.estadoConta(E, c, E.mes);
+    if (st.reg) { const ok = await salvar(() => E.banco.atualizar('confContas', [{ id: st.reg.id, conferida: false }])); if (ok) desenhar(); return; }
+    delete E.contasOk[st.chave]; LS.set('contasOk', E.contasOk); desenhar();
+  },
+  lancarNaConta(d) {
+    const c = R.porId(E.db.contas, d.id);
+    const form = novoForm('despesa');
+    form.conta = c.id;
+    const hoje = hojeISO();
+    if (mesDe(hoje) !== E.mes) { form.data = E.mes < mesDe(hoje) ? somaDias(somaMes(E.mes, 1) + '-01', -1) : E.mes + '-01'; form.dataModo = 'outra'; }
+    E.modal = { tipo: 'lancar', form }; desenhar();
+  },
   async confCompra(d) {
     const t = R.porId(E.db.transacoes, d.id);
     const ok = await salvar(() => E.banco.atualizar('transacoes', [{ id: t.id, conferido: !t.conferido }]));
@@ -484,15 +529,14 @@ const A = {
   contaBate(d) { E.contasOk[d.id + ':' + E.mes] = true; LS.set('contasOk', E.contasOk); desenhar(); },
   async ajustarSaldo(d) {
     const c = R.porId(E.db.contas, d.id);
-    const app = R.saldoConta(E.db, c);
-    const banco = arred(lerValor(E.saldoBanco[d.id]));
-    const dif = arred(banco - app);
-    if (Math.abs(dif) < 0.005) return;
+    const st = T2.estadoConta(E, c, E.mes);
+    if (st.dif === null || Math.abs(st.dif) < 0.005) return;
+    const dif = st.dif;
     const ok = await salvar(async () => {
-      await E.banco.inserir('transacoes', [{ data: hojeISO(), desc: 'Ajuste de saldo', valor: Math.abs(dif), tipo: dif > 0 ? R.TIPO.receita : R.TIPO.despesa, meio: 'Pix', conta: c.id, dono: c.dono, pagou: c.dono, status: 'Confirmado', pago: true, conferido: true, grupoParc: 'AJUSTE', obs: 'Ajuste feito na conferência: banco ' + brl(banco) + ', app ' + brl(app), criadoPor: E.email }]);
+      await E.banco.inserir('transacoes', [{ data: st.dataSaldo, desc: 'Ajuste de saldo', valor: Math.abs(dif), tipo: dif > 0 ? R.TIPO.receita : R.TIPO.despesa, meio: 'Pix', conta: c.id, dono: c.dono, pagou: c.dono, status: 'Confirmado', pago: true, conferido: true, grupoParc: 'AJUSTE', obs: 'Ajuste feito na conferência: banco ' + brl(st.banco) + ', app ' + brl(st.app), criadoPor: E.email }]);
       if (!E.banco.demo) await E.banco.carregar();
     });
-    if (ok) { E.contasOk[d.id + ':' + E.mes] = true; LS.set('contasOk', E.contasOk); avisar('Saldo ajustado.'); }
+    if (ok) avisar('Saldo ajustado.');
   },
 
   // ---- investimentos
@@ -639,7 +683,10 @@ const A = {
       avisar(editou ? 'Alteração salva.' : 'Lançamento salvo.');
     }
   },
-  abrirDetalhe(d) { E.modal = { tipo: 'detalhe', id: d.id, k: d.k }; desenhar(); },
+  abrirDetalhe(d) {
+    if (d.k === 'inv') { const m = R.porId(E.db.movsInv || [], d.id); if (m) { E.modal = { tipo: 'invest', id: m.investimento }; desenhar(); } return; }
+    E.modal = { tipo: 'detalhe', id: d.id, k: d.k }; desenhar();
+  },
   editarLancamento() {
     const m = E.modal;
     if (m.k === 'ren') {

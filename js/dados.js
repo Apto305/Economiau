@@ -31,6 +31,7 @@ const ABAS = {
     aba: 'Rendas', prefixo: 'REN', campos: {
       id: ['ID'], data: ['Data de recebimento', 'd'], pessoa: ['Pessoa (ID)'], desc: ['Descrição'], valor: ['Valor', 'n'],
       conta: ['Conta (ID)'], criadoEm: ['Criado em', 'dh'], tags: ['Tags'], recorrencia: ['Recorrência (ID)'], mesRec: ['Mês da recorrência', 'm'],
+      conferido: ['Conferido', 'b'],
     },
   },
   recorrencias: {
@@ -56,13 +57,20 @@ const ABAS = {
     aba: 'Movimentações de investimento', prefixo: 'MOV', campos: {
       id: ['ID'], investimento: ['Investimento (ID)'], data: ['Data', 'd'], tipo: ['Tipo'], valor: ['Valor', 'n'], conta: ['Conta (ID)'],
       obs: ['Observação'], criadoEm: ['Criado em', 'dh'], liquido: ['Valor líquido recebido', 'n'],
-      foraAcerto: ['Fora do acerto', 'b'],
+      foraAcerto: ['Fora do acerto', 'b'], conferido: ['Conferido', 'b'],
     },
   },
   acertos: {
     aba: 'Acertos', prefixo: 'ACE', campos: {
       id: ['ID'], data: ['Data', 'd'], de: ['De (ID)'], para: ['Para (ID)'], valor: ['Valor', 'n'], mesRef: ['Mês de referência', 'm'],
       obs: ['Observação'], criadoEm: ['Criado em', 'dh'],
+    },
+  },
+  // aba opcional (planilha 1.15): saldo do banco e conferência de cada conta por mês
+  confContas: {
+    aba: 'Conferência de contas', prefixo: 'CNF', opcional: true, campos: {
+      id: ['ID'], conta: ['Conta (ID)'], mes: ['Mês', 'm'], saldoBanco: ['Saldo no banco', 'n'], dataSaldo: ['Data do saldo', 'd'],
+      conferida: ['Conferida', 'b'], criadoEm: ['Criado em', 'dh'],
     },
   },
   cartoes: {
@@ -131,7 +139,14 @@ export class BancoPlanilha {
   constructor(id) { this.id = id; this.mapa = {}; this.linhas = {}; this.sheetIds = {}; }
 
   async carregar() {
-    const nomes = NOMES_ABAS.map((k) => ABAS[k].aba);
+    // abas opcionais (de versões novas do script) só são lidas se existirem
+    if (!this.temOpcionais) {
+      const meta0 = await sheets.metadados(this.id);
+      meta0.sheets.forEach((s) => (this.sheetIds[s.properties.title] = s.properties.sheetId));
+    }
+    const presentes = NOMES_ABAS.filter((k) => !ABAS[k].opcional || this.sheetIds[ABAS[k].aba] !== undefined);
+    this.temOpcionais = presentes.length === NOMES_ABAS.length;
+    const nomes = presentes.map((k) => ABAS[k].aba);
     const [meta, cab, val, idx] = await Promise.all([
       sheets.metadados(this.id), sheets.lerCabecalhos(this.id, nomes), sheets.lerAbas(this.id, nomes),
       sheets.lerAbas(this.id, ['Índices']).catch(() => ({ valueRanges: [{}] })),
@@ -141,7 +156,8 @@ export class BancoPlanilha {
     const faltando = nomes.filter((n) => this.sheetIds[n] === undefined);
     if (faltando.length) { const e = new Error('Esta planilha não tem a estrutura do Economiau (faltam as abas: ' + faltando.join(', ') + ').'); e.estrutura = true; throw e; }
     const db = {};
-    NOMES_ABAS.forEach((k, i) => {
+    NOMES_ABAS.filter((k) => !presentes.includes(k)).forEach((k) => { db[k] = []; this.mapa[k] = {}; this.linhas[k] = {}; });
+    presentes.forEach((k, i) => {
       const def = ABAS[k];
       const formulas = (cab.valueRanges[i].values || [[]])[0] || [];
       const linhas = val.valueRanges[i].values || [];

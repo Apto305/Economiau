@@ -54,6 +54,14 @@ export function itensDoMes(E, A, mes) {
     const conta = A.conta(r.conta);
     itens.push({ k: r.virtual ? 'prev' : 'ren', t: { ...r, tipo: R.TIPO.receita, dono: r.pessoa, pagou: conta ? conta.dono : r.pessoa, ehRenda: true, status: r.virtual ? 'Previsto' : 'Confirmado' } });
   });
+  // aportes e resgates de investimento: aparecem na conta como uma transferência
+  (E.db.movsInv || []).forEach((m) => {
+    if (!m.conta || mesDe(m.data) !== mes || (m.tipo !== 'Aporte' && m.tipo !== 'Resgate')) return;
+    const inv = R.porId(E.db.investimentos || [], m.investimento) || {};
+    const conta = A.conta(m.conta) || {};
+    const liq = m.tipo === 'Resgate' && Number(m.liquido) > 0 ? Number(m.liquido) : Number(m.valor);
+    itens.push({ k: 'inv', t: { id: m.id, data: m.data, desc: (m.tipo === 'Aporte' ? 'Aporte em ' : 'Resgate de ') + (inv.nome || 'investimento'), valor: liq, tipo: 'Investimento', ehInv: m.tipo, conta: m.conta, dono: conta.dono, pagou: conta.dono, destinoDono: inv.titular, status: 'Confirmado', conferido: !!m.conferido } });
+  });
   itens.sort((a, b) => (a.t.data < b.t.data ? 1 : a.t.data > b.t.data ? -1 : (a.t.id < b.t.id ? 1 : -1)));
   return itens;
 }
@@ -79,7 +87,7 @@ function filtrar(E, A, itens) {
       || (quem.includes('entre') && ehEntre(t)))) return false;
     if (f.tipo === 'despesas' && !R.ehGasto(t)) return false;
     if (f.tipo === 'receitas' && t.tipo !== R.TIPO.receita) return false;
-    if (f.tipo === 'transf' && t.tipo !== R.TIPO.fatura && t.tipo !== R.TIPO.transf) return false;
+    if (f.tipo === 'transf' && t.tipo !== R.TIPO.fatura && t.tipo !== R.TIPO.transf && !t.ehInv) return false;
     if (f.grupo) { const c = R.porId(E.db.categorias, t.categoria); if (!c || (c.id !== f.grupo && c.grupo !== f.grupo)) return false; }
     if (f.origem && t.conta !== f.origem && t.cartao !== f.origem && t.contaDestino !== f.origem) return false;
     if (f.tag && !R.tagsDe(t).includes(R.normTag(f.tag))) return false;
@@ -111,7 +119,7 @@ function porDia(A, itens, E) {
 }
 
 function itemTransacao(E, A, { k, t }) {
-  const sub = [t.virtual ? 'Previsto · conta fixa' : '', A.cat(t.categoria) || (t.ehRenda ? 'Renda' : t.tipo === R.TIPO.fatura ? 'Pagamento de fatura' : t.tipo === R.TIPO.transf ? 'Transferência' : ''), A.origem(t), tagsTxt(t)].filter(Boolean).join(' · ');
+  const sub = [t.virtual ? 'Previsto · conta fixa' : '', A.cat(t.categoria) || (t.ehRenda ? 'Renda' : t.tipo === R.TIPO.fatura ? 'Pagamento de fatura' : t.tipo === R.TIPO.transf ? 'Transferência' : t.ehInv ? 'Investimento' : ''), A.origem(t), tagsTxt(t)].filter(Boolean).join(' · ');
   const prev = t.status === 'Previsto' ? ' style="opacity:.6"' : '';
   return `<button class="item" data-a="abrirDetalhe" data-id="${esc(t.id)}" data-k="${k}"${prev}>
     <span class="principal-txt"><span class="titulo">${esc(t.desc || t.tipo)}${parcelaTxt(t)}${t.deduz ? ' <span class="pill neutra" style="height:18px;font-size:11px">deduz da renda</span>' : ''}</span><span class="sub">${sub}</span></span>

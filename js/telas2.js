@@ -32,6 +32,49 @@ export function estadoFatura(db, f) {
   return { compras, total, banco, dif, marcadas, pronta };
 }
 
+// ---- contas: tudo o que entrou e saiu da conta no mês (como um extrato)
+const ultimoDia = (mes) => { const [a, m] = mes.split('-').map(Number); return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10); };
+export function itensDaConta(E, c, mes) {
+  const db = E.db;
+  const out = [];
+  db.transacoes.forEach((t) => {
+    if (mesDe(t.data) !== mes || !R.confirmado(t)) return;
+    let sinal = 0;
+    if (t.tipo === R.TIPO.fatura && t.conta === c.id) sinal = -1;
+    else if (t.tipo === R.TIPO.transf) sinal = t.conta === c.id ? -1 : t.contaDestino === c.id ? 1 : 0;
+    else if (t.conta === c.id && !t.cartao) sinal = t.tipo === R.TIPO.despesa ? -1 : 1;
+    if (sinal) out.push({ k: 'trn', id: t.id, data: t.data, desc: t.desc || t.tipo, sub: R.ehAjuste(t) ? 'Ajuste de saldo' : t.tipo === R.TIPO.fatura ? 'Pagamento de fatura' : t.tipo === R.TIPO.transf ? (sinal < 0 ? 'Transferência para ' : 'Transferência de ') + ((R.porId(db.contas, sinal < 0 ? t.contaDestino : t.conta) || {}).nome || '') : (R.porId(db.categorias, t.categoria) || {}).nome || t.tipo, sinal, valor: t.valor, ok: !!t.conferido, pode: true });
+  });
+  const temRen = E.banco.temCampo('rendas', 'conferido'), temMov = E.banco.temCampo('movsInv', 'conferido');
+  db.rendas.forEach((r) => {
+    if (r.conta !== c.id || mesDe(r.data) !== mes) return;
+    out.push({ k: 'ren', id: r.id, data: r.data, desc: r.desc || 'Renda', sub: 'Renda', sinal: 1, valor: r.valor, ok: temRen ? !!r.conferido : true, pode: temRen });
+  });
+  (db.movsInv || []).forEach((m) => {
+    if (m.conta !== c.id || mesDe(m.data) !== mes || (m.tipo !== 'Aporte' && m.tipo !== 'Resgate')) return;
+    const inv = R.porId(db.investimentos || [], m.investimento) || {};
+    const liq = m.tipo === 'Resgate' && Number(m.liquido) > 0 ? Number(m.liquido) : Number(m.valor);
+    out.push({ k: 'inv', id: m.id, data: m.data, desc: m.tipo + ' · ' + (inv.nome || 'investimento'), sub: 'Investimento', sinal: m.tipo === 'Aporte' ? -1 : 1, valor: liq, ok: temMov ? !!m.conferido : true, pode: temMov });
+  });
+  return out.sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : 0));
+}
+export function estadoConta(E, c, mes) {
+  const db = E.db;
+  const itens = itensDaConta(E, c, mes);
+  const reg = (db.confContas || []).find((x) => x.conta === c.id && x.mes === mes);
+  const hoje = hojeISO();
+  const dataSaldo = ultimoDia(mes) < hoje ? ultimoDia(mes) : hoje;
+  const app = R.saldoConta(db, c, dataSaldo);
+  const k = c.id + ':' + mes;
+  const dig = E.saldoBanco[k];
+  const banco = dig !== undefined ? (dig === '' ? null : arred(lerValor(dig))) : reg && reg.saldoBanco !== '' && reg.saldoBanco !== undefined && reg.saldoBanco !== null ? Number(reg.saldoBanco) : null;
+  const dif = banco === null ? null : arred(banco - app);
+  const marcadas = itens.filter((x) => x.ok).length;
+  const conferida = reg ? !!reg.conferida : !!E.contasOk[k];
+  const pronta = banco !== null && Math.abs(dif) < 0.005 && marcadas === itens.length;
+  return { itens, reg, dataSaldo, app, banco, dif, marcadas, conferida, pronta, chave: k };
+}
+
 export function telaConferencia(E) {
   const A = apoio(E);
   const db = E.db, mes = E.mes;
@@ -39,16 +82,23 @@ export function telaConferencia(E) {
   const faturas = faturasDaConferencia(db, mes);
   const contas = db.contas.filter(R.ativo);
   const fSel = R.porId(faturas, E.confFatura) || null;
+  const cSel = fSel ? null : R.porId(contas, E.confConta) || null;
   const confFat = faturas.filter((f) => f.conferida).length;
-  const confContas = contas.filter((c) => E.contasOk[c.id + ':' + mes]).length;
-  const trnsMes = db.transacoes.filter((t) => !R.ehAjuste(t) && (R.ehGasto(t) ? R.mesCompetencia(db, t) : mesDe(t.data)) === mes && R.confirmado(t));
-  const trnsOk = trnsMes.filter((t) => t.conferido).length;
+  const estados = {};
+  contas.forEach((c) => (estados[c.id] = estadoConta(E, c, mes)));
+  const confContas = contas.filter((c) => estados[c.id].conferida).length;
+  // lançamentos a conferir: compras das faturas do mês + o que passou pelas contas no mês
+  const vistos = {};
+  faturas.forEach((f) => comprasDaFatura(db, f).forEach((t) => (vistos['trn:' + t.id] = !!t.conferido)));
+  contas.forEach((c) => estados[c.id].itens.forEach((x) => (vistos[x.k + ':' + x.id] = x.ok)));
+  const trnsTot = Object.keys(vistos).length;
+  const trnsOk = Object.values(vistos).filter(Boolean).length;
   const barra = (n, d) => `<div class="barra" style="margin-top:6px"><span style="width:${d ? Math.round(n / d * 100) : 0}%"></span></div>`;
 
   const resumo = `<div class="cartao"><h2 style="font-size:15px;font-weight:800">Fechamento de ${esc(nomeM)}</h2>
     <div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Faturas</span><strong>${confFat} de ${faturas.length}</strong></div>${barra(confFat, faturas.length)}</div>
-    <div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Saldos das contas</span><strong>${confContas} de ${contas.length}</strong></div>${barra(confContas, contas.length)}</div>
-    <div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Lançamentos conferidos</span><strong>${trnsOk} de ${trnsMes.length}</strong></div>${barra(trnsOk, trnsMes.length)}</div>
+    <div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Contas</span><strong>${confContas} de ${contas.length}</strong></div>${barra(confContas, contas.length)}</div>
+    <div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Lançamentos conferidos</span><strong>${trnsOk} de ${trnsTot}</strong></div>${barra(trnsOk, trnsTot)}</div>
     <a class="link" href="#/acerto" style="display:inline-block;margin-top:12px">Ir para o acerto de ${esc(nomeM)}</a></div>`;
 
   const listaFaturas = `<div class="secao-titulo"><span>Faturas que contam em ${esc(nomeM)}</span></div>
@@ -59,28 +109,49 @@ export function telaConferencia(E) {
       return `<button class="item" data-a="abrirConfFatura" data-id="${f.id}" ${fSel && fSel.id === f.id ? 'style="background:#232832"' : ''}><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0])}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">vence ${dataCurta(f.vencimento)} · ${st.marcadas} de ${st.compras.length} compras · ${sens(brl(st.total))}</span></span>${pill}</button>`;
     }).join('') : `<div class="vazio">Nenhuma fatura conta em ${esc(nomeM)}.</div>`}</div>`;
 
-  const listaContas = `<div class="secao-titulo"><span>Saldos das contas hoje</span></div>
+  const listaContas = `<div class="secao-titulo"><span>Contas em ${esc(nomeM)}</span></div>
     <div class="lista">${contas.map((c) => {
-      const app = R.saldoConta(db, c);
-      const k = c.id;
-      const digitado = E.saldoBanco[k];
-      const banco = digitado === undefined || digitado === '' ? null : arred(lerValor(digitado));
-      const dif = banco === null ? null : arred(banco - app);
-      const ok = E.contasOk[c.id + ':' + mes];
-      let status = '';
-      if (ok) status = '<span class="pill ok">Bate</span>';
-      else if (dif !== null && Math.abs(dif) < 0.005) status = `<button class="btn btn-peq btn-sec" data-a="contaBate" data-id="${c.id}">Confirmar</button>`;
-      else if (dif !== null) status = `<button class="btn btn-peq btn-pri" data-a="ajustarSaldo" data-id="${c.id}">Ajustar ${brlSinal(dif)}</button>`;
-      return `<div class="item conf-conta"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">no app ${sens(brlSinal(app))}${dif !== null && Math.abs(dif) >= 0.005 ? ' · diferença ' + brlSinal(dif) : ''}</span></span>
-        <span class="conf-conta-acoes"><input class="entrada" style="flex:1;min-width:0;max-width:150px;height:38px;font-size:15px;text-align:right" inputmode="numeric" data-mascara="dinheiro" data-negativo="1" data-saldo-banco="${k}" placeholder="saldo no banco" value="${esc(digitado || '')}" aria-label="Saldo de ${esc(c.nome)} no banco">${status}</span></div>`;
-    }).join('')}</div>
-    <p class="muted" style="font-size:12.5px;margin:8px 4px 0">Digite o saldo que o app do banco mostra agora. Se não bater, "Ajustar" lança a diferença como ajuste de saldo (não conta como gasto nem como receita).</p>`;
+      const st = estados[c.id];
+      const pill = st.conferida ? '<span class="pill ok">Conferida</span>' : st.banco !== null || st.marcadas ? '<span class="pill aviso">Conferindo</span>' : '<span class="pill neutra">A conferir</span>';
+      return `<button class="item" data-a="abrirConfConta" data-id="${c.id}" ${cSel && cSel.id === c.id ? 'style="background:#232832"' : ''}><span class="chip-cor" style="background:${corConta(c.cor)}">${esc((c.nome || '?')[0])}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">${st.marcadas} de ${st.itens.length} lançamentos · saldo ${sens(brlSinal(st.app))}</span></span>${pill}</button>`;
+    }).join('')}</div>`;
 
-  const painel = fSel ? painelFatura(E, A, fSel) : `<div class="cartao so-pc" style="text-align:center;color:var(--muted);padding:40px 16px">${ic('faturas', 32)}<p style="margin-top:8px">Escolha uma fatura para conferir com o banco.</p></div>`;
+  const painel = fSel ? painelFatura(E, A, fSel) : cSel ? painelConta(E, A, cSel, estados[cSel.id]) : `<div class="cartao so-pc" style="text-align:center;color:var(--muted);padding:40px 16px">${ic('faturas', 32)}<p style="margin-top:8px">Escolha uma fatura ou uma conta para conferir com o banco.</p></div>`;
   let corpo;
-  if (fSel) corpo = `<div class="grade-conf"><div class="so-pc">${resumo}${listaFaturas}${listaContas}</div><div>${painel}</div></div>`;
+  if (fSel || cSel) corpo = `<div class="grade-conf"><div class="so-pc">${resumo}${listaFaturas}${listaContas}</div><div>${painel}</div></div>`;
   else corpo = `<div class="grade-conf"><div>${resumo}${listaFaturas}${listaContas}</div><div class="so-pc">${painel}</div></div>`;
-  return casca(E, fSel ? `<span class="so-pc">Conferência</span><span class="so-cel-i">Conferir fatura</span>` : 'Conferência', corpo, { voltar: fSel ? null : 'mais', acoes: (fSel ? `<button class="icone-btn so-cel" data-a="fecharConfFatura" aria-label="Voltar para a lista">${ic('voltar', 22)}</button>` : '') + seletorMes(E) });
+  return casca(E, fSel || cSel ? `<span class="so-pc">Conferência</span><span class="so-cel-i">${fSel ? 'Conferir fatura' : 'Conferir conta'}</span>` : 'Conferência', corpo, { voltar: fSel || cSel ? null : 'mais', acoes: (fSel || cSel ? `<button class="icone-btn so-cel" data-a="fecharConfFatura" aria-label="Voltar para a lista">${ic('voltar', 22)}</button>` : '') + seletorMes(E) });
+}
+
+function painelConta(E, A, c, st) {
+  const nomeM = nomeMesAno(E.mes).split(' ')[0].toLowerCase();
+  const linhaItem = (x) => `<div class="item" style="padding:10px 16px">
+      <button class="check ${x.ok ? 'on' : ''}" style="border:0;width:28px;height:28px;border-radius:14px${x.pode ? '' : ';opacity:.4'}" role="checkbox" aria-checked="${x.ok}" aria-label="Conferir ${esc(x.desc)}" data-a="confItem" data-k="${x.k}" data-id="${x.id}" ${x.pode ? '' : 'disabled title="Rode o script 1.15 para marcar"'}>${x.ok ? ic('ok', 14, 'stroke-width="3.2"') : ''}</button>
+      <button class="principal-txt" style="border:0;background:none;text-align:left;color:var(--text);padding:0" data-a="abrirDetalhe" data-k="${x.k}" data-id="${x.id}"><span class="titulo">${esc(x.desc)}</span><span class="sub">${dataCurta(x.data)} · ${esc(x.sub)}</span></button>
+      <span class="valor ${x.sinal > 0 ? 'rec' : ''}">${x.sinal > 0 ? '+ ' : '− '}${sens(brl(x.valor))}</span></div>`;
+  const difTxt = st.dif === null ? '<span class="muted">—</span>' : Math.abs(st.dif) < 0.005 ? '<span class="rec">Bateu</span>' : `<span style="color:var(--aviso)">${brlSinal(st.dif)}</span>`;
+  let dica = '';
+  if (st.dif !== null && st.dif > 0.005) dica = `No banco tem ${brl(st.dif)} a mais: falta lançar uma entrada, ou uma saída foi lançada a mais ou com valor errado.`;
+  else if (st.dif !== null && st.dif < -0.005) dica = `No app tem ${brl(-st.dif)} a mais: falta lançar uma saída (pix, boleto, tarifa…), ou uma entrada foi lançada a mais.`;
+  const temTab = E.banco.temCampo('confContas', 'conta');
+  const rodape = st.conferida
+    ? `<div class="aviso-caixa" style="background:#18363A;color:#B8E9EC">${ic('ok', 18)}<span>Conta conferida em ${esc(nomeM)}. <button class="link" data-a="desconferirConta" data-id="${c.id}">Desfazer</button></span></div>`
+    : `<button class="btn btn-pri btn-largo" data-a="concluirConta" data-id="${c.id}" ${st.pronta ? '' : 'aria-disabled="true"'}>${st.pronta ? 'Conta conferida' : st.banco === null ? 'Digite o saldo do banco' : Math.abs(st.dif) >= 0.005 ? 'Ainda há diferença' : 'Marque todos os lançamentos'}</button>`;
+  return `<div class="cartao" style="padding:0;overflow:hidden">
+    <div style="padding:16px">
+      <div style="display:flex;align-items:center;gap:10px"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc((c.nome || '?')[0])}</span><div style="flex:1"><div style="font-size:17px;font-weight:800">${esc(A.nomeConta(c.id))}</div><div class="muted" style="font-size:12.5px">saldo em ${dataBR(st.dataSaldo)}${st.dataSaldo === hojeISO() ? ' (hoje)' : ' (fim do mês)'}</div></div></div>
+      ${temTab ? '' : '<div class="aviso-caixa" style="margin-top:10px">Rode o script da planilha versão 1.15 para a conferência das contas ficar salva na planilha (e valer para os dois).</div>'}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;align-items:end">
+        <div><div class="muted" style="font-size:12px">No app</div><div style="font-size:17px;font-weight:800">${sens(brlSinal(st.app))}</div></div>
+        <label><span class="muted" style="font-size:12px;display:block">No banco</span><input class="entrada" style="height:38px;font-size:15px;font-weight:800;text-align:right;padding:0 8px" inputmode="numeric" data-mascara="dinheiro" data-negativo="1" data-saldo-banco="${st.chave}" placeholder="0,00" value="${esc(E.saldoBanco[st.chave] !== undefined ? E.saldoBanco[st.chave] : st.banco === null ? '' : valorTxt(st.banco))}" ${st.conferida ? 'disabled' : ''}></label>
+        <div style="text-align:right"><div class="muted" style="font-size:12px">Diferença</div><div style="font-size:17px;font-weight:800">${difTxt}</div></div>
+      </div>
+      ${dica ? `<div class="aviso-caixa" style="margin-top:12px">${ic('aviso', 18)}<span>${dica}</span></div>` : ''}
+      ${st.conferida ? '' : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-peq btn-sec" data-a="marcarTodosConta" data-id="${c.id}">Marcar todos</button><button class="btn btn-peq btn-borda" data-a="lancarNaConta" data-id="${c.id}">${ic('mais_', 16)}Lançar o que falta</button>${st.dif !== null && Math.abs(st.dif) >= 0.005 ? `<button class="btn btn-peq btn-borda" data-a="ajustarSaldo" data-id="${c.id}">Ajustar ${brlSinal(st.dif)}</button>` : ''}</div>`}
+    </div>
+    <div style="border-top:1px solid var(--line)">${st.itens.length ? st.itens.map(linhaItem).join('') : `<div class="vazio">Nada entrou nem saiu desta conta em ${esc(nomeM)}.</div>`}</div>
+    <div style="padding:14px 16px;border-top:1px solid var(--line)"><div class="muted" style="font-size:12.5px;margin-bottom:10px">${st.marcadas} de ${st.itens.length} lançamentos conferidos · "Ajustar" lança a diferença como ajuste de saldo (não conta como gasto nem receita)</div>${rodape}</div>
+  </div>`;
 }
 
 function painelFatura(E, A, f) {
