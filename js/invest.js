@@ -108,8 +108,10 @@ export function ordemDoResgate(texto) {
   return 'novos';
 }
 
-// Tira "bruto" dos lotes; devolve o IR + IOF retido na hora
-function tirarDosLotes(lotes, bruto, dia, ordem, isento) {
+// Tira "bruto" dos lotes; devolve o IR + IOF retido na hora.
+// cfg: { isento, irDiario } — irDiario = o banco já desconta o IR do
+// rendimento de cada dia (ex.: Mercado Pago); aí o resgate não paga IR.
+function tirarDosLotes(lotes, bruto, dia, ordem, cfg) {
   const total = lotes.reduce((t, l) => t + l.valor, 0);
   if (total <= 0 || bruto <= 0) return 0;
   let imposto = 0;
@@ -118,7 +120,7 @@ function tirarDosLotes(lotes, bruto, dia, ordem, isento) {
     const ganho = Math.max(0, l.valor - l.principal) * frac;
     const dias = diasEntre(l.dia, dia);
     const iof = ganho * aliquotaIOF(dias);
-    const ir = isento ? 0 : (ganho - iof) * aliquotaIR(dias);
+    const ir = cfg.isento || cfg.irDiario ? 0 : (ganho - iof) * aliquotaIR(dias);
     l.rendRetirado += ganho; l.impostoPago += iof + ir; imposto += iof + ir;
     l.principal *= 1 - frac; l.valor *= 1 - frac;
   };
@@ -140,7 +142,7 @@ function tirarDosLotes(lotes, bruto, dia, ordem, isento) {
   return imposto;
 }
 
-function aplicarMovimento(lotes, mov, ordem, isento) {
+function aplicarMovimento(lotes, mov, ordem, cfg) {
   if (mov.tipo === 'Aporte') {
     lotes.push({ dia: mov.dia, original: mov.valor, principal: mov.valor, valor: mov.valor, rendRetirado: 0, impostoPago: 0 });
     return;
@@ -152,50 +154,60 @@ function aplicarMovimento(lotes, mov, ordem, isento) {
     lotes.forEach((l) => { l.valor *= g; });
     return;
   }
-  tirarDosLotes(lotes, mov.valor, mov.dia, ordem, isento);
+  tirarDosLotes(lotes, mov.valor, mov.dia, ordem, cfg);
 }
 
 // Lotes (um por depósito) na manhã de "hoje": rendem desde o dia do depósito;
 // o índice de cada dia útil é creditado no dia seguinte.
-function lotesAte(inv, movs, ind, hoje, ordem, isento) {
+function lotesAte(inv, movs, ind, hoje, ordem, cfg) {
   const lista = movs.filter((m) => m.dia && Number(m.valor)).map((m) => ({ dia: m.dia, tipo: m.tipo, valor: Number(m.valor) }))
     .sort((a, b) => (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : (a.tipo === 'Aporte' ? -1 : 1) - (b.tipo === 'Aporte' ? -1 : 1)));
   const lotes = [];
   let i = 0;
   for (const dia of ind.dias) {
     if (dia >= hoje) break;
-    while (i < lista.length && lista[i].dia <= dia) aplicarMovimento(lotes, lista[i++], ordem, isento);
-    lotes.forEach((l) => { l.valor *= fatorDoDia(inv, dia, ind); });
+    while (i < lista.length && lista[i].dia <= dia) aplicarMovimento(lotes, lista[i++], ordem, cfg);
+    const f = fatorDoDia(inv, dia, ind);
+    lotes.forEach((l) => {
+      if (!cfg.irDiario || cfg.isento) { l.valor *= f; return; }
+      const ganho = l.valor * (f - 1);
+      const ir = ganho * aliquotaIR(diasEntre(l.dia, dia) + 1);
+      l.valor += ganho - ir; l.impostoPago += ir;
+      l.irDiario = (l.irDiario || 0) + ir;
+    });
   }
-  while (i < lista.length && lista[i].dia <= hoje) aplicarMovimento(lotes, lista[i++], ordem, isento);
+  while (i < lista.length && lista[i].dia <= hoje) aplicarMovimento(lotes, lista[i++], ordem, cfg);
   return lotes;
 }
 
-function resumoDosLotes(lotes, hoje, isento) {
+function resumoDosLotes(lotes, hoje, cfg) {
   const r = { aplicado: 0, bruto: 0, rendimento: 0, iof: 0, ir: 0, liquido: 0, lotes: [] };
   lotes.forEach((l) => {
     const rend = Math.max(0, l.valor - l.principal);
     const dias = diasEntre(l.dia, hoje);
     const iof = rend * aliquotaIOF(dias);
-    const ir = isento ? 0 : (rend - iof) * aliquotaIR(dias);
+    const ir = cfg.isento || cfg.irDiario ? 0 : (rend - iof) * aliquotaIR(dias);
     r.aplicado += l.principal; r.bruto += l.valor; r.rendimento += l.valor - l.principal; r.iof += iof; r.ir += ir;
     r.lotes.push({ dia: l.dia, dias: dias, original: l.original, principal: l.principal, valor: l.valor,
-      rendimento: l.valor - l.principal + l.rendRetirado, imposto: iof + ir + l.impostoPago, retirado: l.original - l.principal });
+      rendimento: l.valor - l.principal + l.rendRetirado + (l.irDiario || 0), imposto: iof + ir + l.impostoPago, retirado: l.original - l.principal });
   });
   r.liquido = r.bruto - r.iof - r.ir;
   return r;
 }
 
 export const ehIsento = (inv) => inv.isento === 'Sim' || ['LCI', 'LCA', 'Poupança'].includes(inv.tipo);
+export const IR_MODOS = ['No resgate', 'No rendimento diário'];
+export const irDiario = (inv) => String(inv.irModo || '').toLowerCase().indexOf('diári') >= 0;
+const cfgDe = (inv) => ({ isento: ehIsento(inv), irDiario: irDiario(inv) });
 
 const paraCore = (movs) => movs.map((m) => ({ dia: m.data, tipo: m.tipo, valor: Number(m.valor) }));
 export const ORDENS_RESGATE = ['Depósitos mais novos', 'Depósitos mais antigos', 'Proporcional'];
 
 export function calcular(inv, movs, ind, hoje) {
-  const isento = ehIsento(inv);
+  const cfg = cfgDe(inv);
   const ix = completarIndices(ind, hoje);
-  const lotes = lotesAte(inv, paraCore(movs), ix, hoje, ordemDoResgate(inv.ordemResgate), isento);
-  const r = resumoDosLotes(lotes, hoje, isento);
+  const lotes = lotesAte(inv, paraCore(movs), ix, hoje, ordemDoResgate(inv.ordemResgate), cfg);
+  const r = resumoDosLotes(lotes, hoje, cfg);
   r.depositos = r.lotes.map((l) => ({ ...l, valor: arred(l.valor), principal: arred(l.principal), rendimento: arred(l.rendimento), imposto: arred(l.imposto), retirado: arred(l.retirado) }));
   r.lotes = r.lotes.filter((l) => l.valor > 0.005);
   ['aplicado', 'bruto', 'rendimento', 'iof', 'ir', 'liquido'].forEach((k) => { r[k] = arred(r[k]); });
@@ -206,14 +218,16 @@ export function calcular(inv, movs, ind, hoje) {
 // Resgate informado pelo que caiu na conta: quanto saiu do investimento
 // (bruto) naquele dia, pela posição do dia e pela ordem de resgate.
 export function brutoDoResgate(inv, movs, ind, data, liquido) {
-  const isento = ehIsento(inv);
+  const cfg = cfgDe(inv);
   const ordem = ordemDoResgate(inv.ordemResgate);
   const ix = completarIndices(ind, data);
-  const base = lotesAte(inv, paraCore(movs).filter((m) => m.dia <= data), ix, data, ordem, isento);
+  const base = lotesAte(inv, paraCore(movs).filter((m) => m.dia <= data), ix, data, ordem, cfg);
   const total = base.reduce((t, l) => t + l.valor, 0);
-  const liqDe = (b) => { const c = base.map((l) => ({ ...l })); return b - tirarDosLotes(c, b, data, ordem, isento); };
+  const liqDe = (b) => { const c = base.map((l) => ({ ...l })); return b - tirarDosLotes(c, b, data, ordem, cfg); };
   if (total <= 0) return { bruto: arred(liquido), total: false };
-  if (liqDe(total) <= liquido + 0.005) return { bruto: arred(total), total: true };
+  // o que caiu é tudo (ou deixaria só uns centavos, diferença de arredondamento do banco): zera
+  const liqTotal = liqDe(total);
+  if (liqTotal <= liquido + Math.max(1, liqTotal * 0.001)) return { bruto: arred(total), total: true };
   let lo = liquido, hi = total;
   for (let k = 0; k < 60; k++) { const m = (lo + hi) / 2; if (liqDe(m) < liquido) lo = m; else hi = m; }
   return { bruto: arred(hi), total: false };

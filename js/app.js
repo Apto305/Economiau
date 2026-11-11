@@ -559,6 +559,7 @@ const A = {
     const fixo = T2.indexadorFixo(f.tipo);
     const o = { nome: f.nome.trim(), emissor: (f.emissor || '').trim(), tipo: f.tipo, titular: f.titular, indexador: fixo || f.indexador, taxa: lerValor(f.taxa), dataAplic: f.dataAplic || hojeISO(), vencimento: f.vencimento || '', liquidez: f.liquidez, isento: ['LCI', 'LCA', 'Poupança'].includes(f.tipo) ? 'Sim' : f.isento };
     if (E.banco.temCampo('investimentos', 'ordemResgate')) o.ordemResgate = f.ordemResgate || I.ORDENS_RESGATE[0];
+    if (E.banco.temCampo('investimentos', 'irModo')) o.irModo = f.irModo || I.IR_MODOS[0];
     const editando = E.modal.editando;
     const valor = arred(lerValor(f.valor));
     const ok = await salvar(async () => {
