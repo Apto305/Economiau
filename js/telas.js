@@ -656,7 +656,7 @@ const marcado = (on) => `<span class="check">${on ? ic('ok', 13, 'stroke-width="
 const dl = (A, id) => (A.classe(id) === 'gio' ? 'dela' : 'dele');
 const sozinho = (A, id) => (A.classe(id) === 'gio' ? 'sozinha' : 'sozinho');
 // Nome curto da regra de divisão de um gasto da família
-export const nomeRegra = (r) => ({ '50/50': 'meio a meio', 'Proporcional à renda': 'pela renda', Personalizada: '% fixo', Individual: 'individual' }[r] || 'pela renda');
+export const nomeRegra = (r) => ({ '50/50': 'meio a meio', 'Proporcional à renda': 'pela renda', Personalizada: '% fixo', Individual: 'sem dividir' }[r] || 'pela renda');
 const TIPOS_LANC = [['despesa', 'Despesa'], ['receita', 'Receita'], ['cartao', 'Cartão'], ['transferencia', 'Transferir']];
 
 function modalLancar(E, A, m) {
@@ -722,14 +722,15 @@ function modalLancar(E, A, m) {
         const regraLanc = f.divisao || fam.divisaoPadrao || 'Proporcional à renda';
         const parts = R.partesFamilia(db, { divisao: regraLanc, pagou: pagador, valor }, f.tipo === 'cartao' && A.cartao(f.cartao) ? R.faturaPara(db, A.cartao(f.cartao), f.data).mesRenda : mesDe(f.data));
         const outro = A.ps.find((p) => p.id !== pagador);
-        if (pagador === fam.id) divTxt = f.tipo === 'receita' ? 'Receita da família na conta da Família: nada a repassar.' : 'Gasto da família pago com o dinheiro da família: ninguém deve nada.';
+        if (pagador !== fam.id && regraLanc === 'Individual') divTxt = f.tipo === 'receita' ? `Fica toda com ${esc(A.nome(pagador))}: não entra no acerto.` : `Gasto da família pago só por ${esc(A.nome(pagador))}, sem dividir: não entra no acerto.`;
+        else if (pagador === fam.id) divTxt = f.tipo === 'receita' ? 'Receita da família na conta da Família: nada a repassar.' : 'Gasto da família pago com o dinheiro da família: ninguém deve nada.';
         else if (f.tipo === 'receita') divTxt = outro ? `${esc(A.nome(pagador))} recebeu; a parte de ${esc(A.nome(outro.id))} é ${brl(valor * (parts[outro.id] || 0))}` : '';
         else if (estorno) divTxt = outro ? `O crédito caiu no cartão de ${esc(A.nome(pagador))}: abate <strong>${brl(valor * (parts[outro.id] || 0))}</strong> do que ${esc(A.nome(outro.id))} deve.` : '';
         else divTxt = outro ? `${esc(A.nome(outro.id))} deve a ${esc(A.nome(pagador))} a parte que lhe cabe: <strong>${brl(valor * (parts[outro.id] || 0))}</strong>` : '';
         if (pagador !== fam.id) {
-          const regras = [['Proporcional à renda', 'Pela renda'], ['50/50', 'Meio a meio']];
+          const regras = [['Proporcional à renda', 'Pela renda'], ['50/50', 'Meio a meio'], ['Individual', 'Não dividir']];
           if (!regras.some(([v]) => v === regraLanc)) regras.push([regraLanc, nomeRegra(regraLanc).replace(/^./, (c) => c.toUpperCase())]);
-          divTxt += `<div class="muted" style="font-size:12px;margin-top:4px">Da família · ${A.ps.map((p) => Math.round((parts[p.id] || 0) * 100)).join(' / ')} ${nomeRegra(regraLanc)}</div>
+          divTxt += `<div class="muted" style="font-size:12px;margin-top:4px">${regraLanc === 'Individual' ? 'Continua aparecendo nos gastos da família' : 'Da família · ' + A.ps.map((p) => Math.round((parts[p.id] || 0) * 100)).join(' / ') + ' ' + nomeRegra(regraLanc)}</div>
             <div class="chips" style="margin-top:8px">${regras.map(([v, n]) => `<button class="chip" aria-pressed="${regraLanc === v}" data-a="lancDivisao" data-v="${v}">${n}</button>`).join('')}</div>`;
         }
       } else if (fam && pagador === fam.id) {
