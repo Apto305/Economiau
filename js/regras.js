@@ -298,8 +298,21 @@ export function investimentosDoMes(db, perfilId, mes) {
 export function visivelNoPerfil(db, t, perfilId) {
   const fam = familia(db);
   if (!perfilId) return true;
-  if (fam && perfilId === fam.id) return t.dono === fam.id; // perfil Família: só o que é da família
-  return t.dono === perfilId || t.pagou === perfilId || (fam && t.dono === fam.id) || t.destinoDono === perfilId;
+  if (fam && perfilId === fam.id) return mexeNaFamilia(db, t); // perfil Família: o que é da família ou passa pelas contas dela
+  return t.dono === perfilId || t.pagou === perfilId || t.destinoDono === perfilId || mexeNaFamilia(db, t);
+}
+
+// Lançamento da Família ou que mexe no dinheiro dela: conta de origem ou de
+// destino da Família, cartão da Família, investimento da Família
+export function mexeNaFamilia(db, t) {
+  const fam = familia(db);
+  if (!fam) return false;
+  const f = fam.id;
+  if (t.dono === f || t.pagou === f || t.destinoDono === f) return true;
+  if (t.conta && donoDaConta(db, t.conta) === f) return true;
+  if (t.contaDestino && donoDaConta(db, t.contaDestino) === f) return true;
+  const c = t.cartao ? porId(db.cartoes, t.cartao) : null;
+  return !!(c && c.dono === f);
 }
 
 // ------------------------------------------------------------------ saldos

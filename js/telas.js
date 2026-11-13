@@ -96,7 +96,7 @@ function filtrar(E, A, itens) {
     const vis = R.visivelNoPerfil(E.db, t, p);
     if (!quem.length) { if (!vis) return false; }
     else if (!((quem.includes('minhas') && vis && t.dono === p)
-      || (quem.includes('familia') && vis && fam && t.dono === fam.id)
+      || (quem.includes('familia') && vis && R.mexeNaFamilia(E.db, t))
       || (quem.includes('entre') && ehEntre(t)))) return false;
     if (f.tipo === 'despesas' && !R.ehGasto(t) && t.ehInv !== 'Aporte') return false;
     if (f.tipo === 'receitas' && t.tipo !== R.TIPO.receita && t.ehInv !== 'Resgate') return false;
