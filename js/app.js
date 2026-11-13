@@ -590,12 +590,27 @@ const A = {
     E.modal = { tipo: 'mov', form: { foraAcerto: false, investimento: i.id, tipo: d.v, valor: '', data: hojeISO(), conta: primeiraConta(ehFamilia(i.titular) ? eu() : i.titular) } };
     desenhar();
   },
+  // editar aporte/resgate (pelo detalhe do investimento ou tocando em Transações)
+  editarMov(d) {
+    const mv = R.porId(E.db.movsInv || [], d.id);
+    if (!mv) return;
+    E.modalPai = E.modal; // fechar volta para o investimento
+    E.modal = formEditarMov(mv, true);
+    desenhar();
+  },
+  verInvest(d) { E.modalPai = null; E.modal = { tipo: 'invest', id: d.id }; desenhar(); },
+  excluirMovEditando() {
+    const id = E.modal.editando, voltar = E.modal.voltarInv;
+    A.excluirMov({ id });
+    E.modal.voltarInv = voltar;
+  },
   resgateTotal() { const f = E.modal.form; const r = T2.calcInvest(E).res[f.investimento]; f.valor = valorTxt(r.liquido); desenhar(); },
   async salvarMov() {
     const f = E.modal.form;
     const valor = arred(lerValor(f.valor));
     if (!(valor > 0)) return avisar('Digite o valor.', true);
     const inv = R.porId(E.db.investimentos, f.investimento);
+    if (E.modal.editando) return salvarEdicaoMov(E.modal, f, inv, valor);
     let total = false;
     const ok = await salvar(async () => {
       if (f.tipo === 'Aporte') {
@@ -647,7 +662,8 @@ const A = {
   async confirmarExcluirMov() {
     const { id, inv } = E.modal.alvo;
     const ok = await salvar(() => E.banco.excluir('movsInv', [id]));
-    if (ok) { E.modal = { tipo: 'invest', id: inv }; E.modalPai = null; avisar('Movimentação excluída.'); }
+    const voltar = E.modal.voltarInv !== false;
+    if (ok) { E.modal = voltar ? { tipo: 'invest', id: inv } : null; E.modalPai = null; avisar('Movimentação excluída.'); }
   },
 
   salvarParcelaUma() { E.modal = E.modalPai; E.modalPai = null; E.modal.escopo = 'uma'; A.salvarLancamento(); },
@@ -694,7 +710,7 @@ const A = {
     }
   },
   abrirDetalhe(d) {
-    if (d.k === 'inv') { const m = R.porId(E.db.movsInv || [], d.id); if (m) { E.modal = { tipo: 'invest', id: m.investimento }; desenhar(); } return; }
+    if (d.k === 'inv') { const m = R.porId(E.db.movsInv || [], d.id); if (m) { E.modalPai = null; E.modal = formEditarMov(m, false); desenhar(); } return; }
     E.modal = { tipo: 'detalhe', id: d.id, k: d.k }; desenhar();
   },
   editarLancamento() {
@@ -905,6 +921,40 @@ const A = {
 
 // ------------------------------------------------------- gravações
 // "Fora do acerto" de um aporte/resgate: só quando a planilha tem a coluna e a Família está envolvida
+function formEditarMov(mv, voltarInv) {
+  const liq = mv.tipo === 'Resgate' && Number(mv.liquido) > 0 ? Number(mv.liquido) : Number(mv.valor);
+  return { tipo: 'mov', editando: mv.id, voltarInv, form: { investimento: mv.investimento, tipo: mv.tipo, valor: valorTxt(liq), data: mv.data, conta: mv.conta || '', foraAcerto: !!mv.foraAcerto } };
+}
+
+async function salvarEdicaoMov(m, f, inv, valor) {
+  const mv = R.porId(E.db.movsInv || [], m.editando);
+  if (!mv) return avisar('Essa movimentação não existe mais.', true);
+  if (!f.data) return avisar('Escolha a data.', true);
+  let status = '';
+  const ok = await salvar(async () => {
+    const o = { id: mv.id, data: f.data, conta: f.conta || '', ...foraMov(inv.titular, f) };
+    if (mv.tipo === 'Aporte') o.valor = valor;
+    else {
+      // recalcula quanto saiu do investimento pela posição do dia, sem este resgate
+      const C = T2.calcInvest(E);
+      const outros = (E.db.movsInv || []).filter((x) => x.investimento === inv.id && x.id !== mv.id);
+      const res = I.brutoDoResgate(inv, outros, C.ind, f.data, valor);
+      const temLiq = E.banco.temCampo('movsInv', 'liquido');
+      o.valor = temLiq ? res.bruto : valor;
+      if (temLiq) o.liquido = valor;
+      if (res.total && inv.status !== 'Arquivado') status = 'Arquivado';
+      else if (!res.total && inv.status === 'Arquivado') status = 'Ativo';
+    }
+    await E.banco.atualizar('movsInv', [o]);
+    if (status) await E.banco.atualizar('investimentos', [{ id: inv.id, status }]);
+  });
+  if (!ok) return;
+  // aportes e resgates mudam a posição: recalcula os resgates depois deste
+  try { if (await corrigirResgates()) { E.db = E.banco.db; E.rev++; } } catch (e) { /* tenta de novo ao abrir */ }
+  E.modal = m.voltarInv ? { tipo: 'invest', id: inv.id } : null; E.modalPai = null;
+  avisar(status === 'Arquivado' ? 'Alteração salva. O investimento ficou zerado e foi arquivado.' : status === 'Ativo' ? 'Alteração salva. Sobrou saldo no investimento: ele voltou a ficar ativo.' : 'Alteração salva.');
+}
+
 function foraMov(titular, f) {
   if (!E.banco.temCampo('movsInv', 'foraAcerto')) return {};
   return { foraAcerto: R.donosDiferentes(R.donoDaConta(E.db, f.conta), titular) && !!f.foraAcerto };

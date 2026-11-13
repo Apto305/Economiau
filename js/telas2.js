@@ -299,7 +299,7 @@ export function modalInvest(E, A, m) {
     ${faixa && faixa.data ? `<p class="muted" style="font-size:12.5px;margin-top:8px">O aporte mais antigo cai para ${pct(faixa.proxima, faixa.proxima % 1 ? 1 : 0)} em ${dataBR(faixa.data)}.</p>` : ''}`;
   const movs = r.movs.map((x) => x.tipo === 'Ajuste'
     ? `<div class="item" style="padding:10px 0"><span class="principal-txt"><span class="titulo">Correção pelo banco</span><span class="sub">${dataBR(x.data)} · rendimento ${Number(x.valor) >= 0 ? 'a mais' : 'a menos'}${x.obs ? ' · ' + esc(x.obs) : ''}</span></span><span class="valor ${Number(x.valor) >= 0 ? 'rec' : ''}">${sens(brlSinal(Number(x.valor)))}</span><button class="icone-btn" data-a="excluirMov" data-id="${x.id}" aria-label="Excluir correção">${ic('lixo', 18)}</button></div>`
-    : `<div class="item" style="padding:10px 0"><span class="principal-txt"><span class="titulo">${x.tipo === 'Aporte' ? 'Aporte' : 'Resgate'}</span><span class="sub">${dataBR(x.data)} · ${esc(A.nomeConta(x.conta) || '')}${x.tipo === 'Resgate' && x.liquido ? ' · caiu ' + brl(x.liquido) : ''}</span></span><span class="valor ${x.tipo === 'Aporte' ? '' : 'rec'}">${x.tipo === 'Aporte' ? '' : '− '}${sens(brl(x.valor))}</span><button class="icone-btn" data-a="excluirMov" data-id="${x.id}" aria-label="Excluir movimentação">${ic('lixo', 18)}</button></div>`).join('');
+    : `<div class="item" style="padding:10px 0"><span class="principal-txt"><span class="titulo">${x.tipo === 'Aporte' ? 'Aporte' : 'Resgate'}</span><span class="sub">${dataBR(x.data)} · ${esc(A.nomeConta(x.conta) || '')}${x.tipo === 'Resgate' && x.liquido ? ' · caiu ' + brl(x.liquido) : ''}</span></span><span class="valor ${x.tipo === 'Aporte' ? '' : 'rec'}">${x.tipo === 'Aporte' ? '' : '− '}${sens(brl(x.valor))}</span><button class="icone-btn" data-a="editarMov" data-id="${x.id}" aria-label="Editar movimentação">${ic('lapis', 18)}</button><button class="icone-btn" data-a="excluirMov" data-id="${x.id}" aria-label="Excluir movimentação">${ic('lixo', 18)}</button></div>`).join('');
   // por depósito, como o banco mostra: valor atual, rendimento bruto e IR (inclusive o já pago em resgates)
   const deps = (r.depositos || []).filter((l) => l.original > 0);
   const porDeposito = deps.length > 1 || deps.some((l) => l.retirado > 0.005) ? `<h2 style="font-size:15px;font-weight:800;margin-top:18px">Por depósito</h2>
@@ -438,25 +438,32 @@ export function modalMov(E, A, m) {
   const r = C.res[inv.id];
   const contas = E.db.contas.filter(R.ativo);
   const valor = lerValor(f.valor);
+  const ed = m.editando ? R.porId(E.db.movsInv || [], m.editando) : null;
   let est = '';
-  if (f.tipo === 'Resgate' && valor > 0 && r.liquido > 0) {
-    const fr = Math.min(1, valor / r.liquido);
+  if (f.tipo === 'Resgate' && valor > 0 && f.data && (r.liquido > 0 || ed)) {
+    // pela posição do dia do resgate (sem este, se estiver editando), como é gravado
+    const outros = (E.db.movsInv || []).filter((x) => x.investimento === inv.id && (!ed || x.id !== ed.id));
+    const res = I.brutoDoResgate(inv, outros, C.ind, f.data, valor);
     est = `<div class="cartao" style="margin-top:14px;background:var(--bg);font-size:14px">
-      <div style="display:flex;justify-content:space-between"><span class="muted">Sai do investimento (bruto)</span><strong>${brl(r.bruto * fr)}</strong></div>
-      <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted">IR + IOF desta parte</span><strong>− ${brl((r.ir + r.iof) * fr)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span class="muted">Sai do investimento (bruto)</span><strong>${brl(res.bruto)}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted">IR + IOF desta parte</span><strong>− ${brl(Math.max(0, res.bruto - valor))}</strong></div>
       <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted">Cai na conta</span><strong class="rec">${brl(valor)}</strong></div>
-      ${fr >= 0.999 ? '<p class="muted" style="font-size:12.5px;margin-top:8px">Resgate total: o investimento fica zerado.</p>' : ''}</div>`;
+      ${res.total ? '<p class="muted" style="font-size:12.5px;margin-top:8px">Resgate total: o investimento fica zerado.</p>' : ''}</div>`;
   }
   const corpo = `<p class="muted" style="margin:8px 4px 0;font-size:13.5px">${esc(inv.nome)} · líquido hoje ${brl(r.liquido)}</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label class="campo"><span>${f.tipo === 'Resgate' ? 'Valor que cai na conta (R$)' : 'Valor do aporte (R$)'}</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
       <label class="campo"><span>Data</span><input type="date" class="entrada" data-campo="data" value="${esc(f.data)}"></label>
     </div>
-    ${f.tipo === 'Resgate' ? `<button class="link" style="margin-top:8px" data-a="resgateTotal">Resgatar tudo (${brl(r.liquido)})</button>` : ''}
+    ${f.tipo === 'Resgate' && !ed ? `<button class="link" style="margin-top:8px" data-a="resgateTotal">Resgatar tudo (${brl(r.liquido)})</button>` : ''}
     <label class="campo"><span>${f.tipo === 'Resgate' ? 'Cai na conta' : 'Sai da conta'}</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${contas.map((c) => `<option value="${c.id}" ${f.conta === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))} (${esc(A.nome(c.dono))})</option>`).join('')}</select></label>
     ${est}${blocoAcertoMov(E, A, inv, f, valor)}
-    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMov" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : f.tipo === 'Resgate' ? 'Registrar resgate' : 'Registrar aporte'}</button>`;
-  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="${f.tipo}"><div class="alca"></div><h2>${f.tipo === 'Resgate' ? 'Resgatar' : 'Novo aporte'}</h2>${corpo}</div>`;
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMov" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : ed ? 'Salvar alteração' : f.tipo === 'Resgate' ? 'Registrar resgate' : 'Registrar aporte'}</button>
+    ${ed ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      ${m.voltarInv ? '<span></span>' : `<button class="btn btn-borda" data-a="verInvest" data-id="${inv.id}">Ver investimento</button>`}
+      <button class="btn btn-perigo" data-a="excluirMovEditando">${ic('lixo', 18)}Excluir</button></div>
+      <p class="muted" style="font-size:12.5px;margin-top:10px">${f.tipo === 'Resgate' ? 'Digite o valor que caiu na conta: o app recalcula o bruto e o IR pela posição do dia.' : 'Mudar o aporte muda a posição do investimento.'} Os resgates depois deste são recalculados junto.</p>` : ''}`;
+  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="${f.tipo}"><div class="alca"></div><h2>${ed ? (f.tipo === 'Resgate' ? 'Editar resgate' : 'Editar aporte') : f.tipo === 'Resgate' ? 'Resgatar' : 'Novo aporte'}</h2>${corpo}</div>`;
 }
 
 export { valorTxt };
