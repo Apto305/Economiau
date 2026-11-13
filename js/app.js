@@ -1018,7 +1018,7 @@ async function atualizarLancamento(f, valor) {
       if (r.recorrencia && !r.mesRec && mesDe(f.data) !== mesDe(r.data) && E.banco.temCampo('rendas', 'mesRec')) o.mesRec = mesDe(r.data);
       await E.banco.atualizar('rendas', [o]);
     } else {
-      await E.banco.inserir('transacoes', [{ data: f.data, desc: f.desc.trim(), obs: f.obs || '', criadoPor: E.email, status: 'Confirmado', valor, tipo: R.TIPO.receita, categoria: f.categoria, meio: 'Pix', conta: c ? c.id : '', dono: f.dono, pagou: c ? c.dono : '', divisao: f.dono === famId ? (fam().divisaoPadrao || '') : '', pago: true, recorrencia: r.recorrencia || '', ...(v18 ? { tags } : {}) }]);
+      await E.banco.inserir('transacoes', [{ data: f.data, desc: f.desc.trim(), obs: f.obs || '', criadoPor: E.email, status: 'Confirmado', valor, tipo: R.TIPO.receita, categoria: f.categoria, meio: 'Pix', conta: c ? c.id : '', dono: f.dono, pagou: c ? c.dono : '', divisao: f.dono === famId ? (f.divisao || fam().divisaoPadrao || '') : '', pago: true, recorrencia: r.recorrencia || '', ...(v18 ? { tags } : {}) }]);
       await E.banco.excluir('rendas', [r.id]);
     }
     if (!E.banco.demo) await E.banco.carregar();

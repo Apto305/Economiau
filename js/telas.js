@@ -253,7 +253,10 @@ export function telaInicio(E) {
   const ac = R.acertoDoMes(db, mes);
   const renda = R.rendaDoMes(db, mes);
   const ent = ehFam ? null : R.entradasDoMes(db, mes, p);
-  const rendaPerfil = arred((ehFam ? Object.values(renda).reduce((a, b) => a + b, 0) : ent.total) + inv.resgates);
+  const recFam = ehFam ? R.receitasDaFamilia(db, mes) : 0;
+  const rendaPerfil = arred((ehFam ? Object.values(renda).reduce((a, b) => a + b, 0) + recFam : ent.total) + inv.resgates);
+  const outrasTxt = ehFam ? (recFam ? ' + ' + sens(brl(recFam)) + ' de receitas da família' : '')
+    : [ent.outras ? sens(brl(ent.outras)) + ' de outras entradas' : '', ent.familia ? sens(brl(ent.familia)) + ' da sua parte nas receitas da família' : ''].filter(Boolean).join(' + ');
   const invTxt = (v, n) => (v ? ' · inclui ' + sens(brl(v)) + ' de ' + n : '');
   const contas = db.contas.filter((c) => R.ativo(c) && (ehFam || c.dono === p));
   const saldoTotal = contas.reduce((s, c) => s + R.saldoConta(db, c), 0);
@@ -264,7 +267,7 @@ export function telaInicio(E) {
 
   const kpis = `<div class="kpis">
     <div class="kpi"><div class="r">${ehFam ? 'Gastos da família' : 'Seus gastos'}</div><div class="v">${sens(brl(gastos))}</div><div class="s">${previstos > gastos ? 'com previstos ' + sens(brl(previstos)) : ehFam ? 'no mês' : 'pessoais + sua parte na família'}${invTxt(inv.aportes, 'aportes')}</div></div>
-    <div class="kpi"><div class="r">${ehFam ? 'Renda da família' : 'Suas entradas'}</div><div class="v rec">${sens(brl(rendaPerfil))}</div><div class="s">${rendaPerfil ? (ehFam ? 'só o que entra na divisão · ' + A.ps.map((x) => A.nome(x.id) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') : (ent.outras ? sens(brl(ent.divisao)) + ' na divisão (' + Math.round((fr[p] || 0) * 100) + '%) + ' + sens(brl(ent.outras)) + ' de outras entradas' : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%')) + invTxt(inv.resgates, 'resgates') : 'nenhuma entrada lançada em ' + nomeM}</div></div>
+    <div class="kpi"><div class="r">${ehFam ? 'Renda da família' : 'Suas entradas'}</div><div class="v rec">${sens(brl(rendaPerfil))}</div><div class="s">${rendaPerfil ? (ehFam ? 'rendas · ' + A.ps.map((x) => A.nome(x.id) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') + outrasTxt : (outrasTxt ? sens(brl(ent.divisao)) + ' na divisão (' + Math.round((fr[p] || 0) * 100) + '%) + ' + outrasTxt : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%')) + invTxt(inv.resgates, 'resgates') : 'nenhuma entrada lançada em ' + nomeM}</div></div>
     <div class="kpi"><div class="r">${ehFam ? 'Em todas as contas' : 'Nas suas contas'}</div><div class="v">${sens(brl(saldoTotal))}</div><div class="s">${contas.length} conta${contas.length === 1 ? '' : 's'}</div></div>
     <div class="kpi"><div class="r">Sobra do mês</div><div class="v ${sobra < 0 ? 'desp' : ''}">${sens(brlSinal(arred(sobra)))}</div><div class="s">${rendaPerfil ? 'renda ' + sens(brl(rendaPerfil)) + ' − gastos ' + sens(brl(previstos)) : (ehFam ? 'lance a renda de ' : 'lance as entradas de ') + nomeM + ' para calcular'}</div></div>
   </div>`;
@@ -316,7 +319,12 @@ export function telaTransacoes(E) {
   itens.forEach((x) => { const g = grupos[grupos.length - 1]; if (g && g.data === x.t.data) g.itens.push(x); else grupos.push({ data: x.t.data, itens: [x] }); });
   const cel = `<div class="lista-trans">${grupos.length ? grupos.map((g) => `<div class="secao-titulo"><span>${g.data === A.hoje ? 'Hoje' : diaSemana(g.data).replace(/^./, (c) => c.toUpperCase())}, ${dataCurta(g.data)}</span></div><div class="lista">${g.itens.map((x) => itemTransacao(E, A, x)).join('')}</div>`).join('') : '<div class="vazio">Nenhum lançamento com esses filtros.</div>'}</div>`;
   const parte = (t) => {
-    if (!R.ehGasto(t) || ehFam) return '';
+    if (ehFam) return '';
+    if (t.tipo === R.TIPO.receita && !t.ehRenda && !R.ehAjuste(t) && A.fam && t.dono === A.fam.id) {
+      const v = R.parteNaReceita(E.db, t, E.perfil);
+      return v ? '<span class="rec">' + sens(brl(v)) + '</span>' : '<span class="muted">não é sua</span>';
+    }
+    if (!R.ehGasto(t)) return '';
     const v = R.parteDe(E.db, t, E.perfil);
     return v ? sens(brl(Math.abs(v))) : '<span class="muted">não é sua</span>';
   };
@@ -741,15 +749,26 @@ function modalLancar(E, A, m) {
         const regraLanc = f.divisao || fam.divisaoPadrao || 'Proporcional à renda';
         const parts = R.partesFamilia(db, { divisao: regraLanc, pagou: pagador, valor }, f.tipo === 'cartao' && A.cartao(f.cartao) ? R.faturaPara(db, A.cartao(f.cartao), f.data).mesRenda : mesDe(f.data));
         const outro = A.ps.find((p) => p.id !== pagador);
-        if (pagador !== fam.id && regraLanc === 'Individual') divTxt = f.tipo === 'receita' ? `Fica toda com ${esc(A.nome(pagador))}: não entra no acerto.` : `Gasto da família pago só por ${esc(A.nome(pagador))}, sem dividir: não entra no acerto.`;
-        else if (pagador === fam.id) divTxt = f.tipo === 'receita' ? 'Receita da família na conta da Família: nada a repassar.' : 'Gasto da família pago com o dinheiro da família: ninguém deve nada.';
-        else if (f.tipo === 'receita') divTxt = outro ? `${esc(A.nome(pagador))} recebeu; a parte de ${esc(A.nome(outro.id))} é ${brl(valor * (parts[outro.id] || 0))}` : '';
+        const nasEntradas = () => 'Conta nas entradas de cada um: ' + A.ps.map((p) => `${esc(A.nome(p.id))} ${brl(valor * (parts[p.id] || 0))}`).join(' · ') + '.';
+        if (f.tipo === 'receita' && pagador === fam.id) {
+          if (regraLanc === 'Individual') divTxt = 'Caiu na conta da Família e fica com a Família: não entra nas entradas de ninguém nem no acerto.';
+          else {
+            divTxt = 'Caiu na conta da Família. ' + nasEntradas();
+            // regra diferente da divisão do dinheiro da conta da Família: um repassa ao outro a diferença
+            const ff = R.fracoesFamilia(db, mesDe(f.data));
+            const ganha = A.ps.find((p) => valor * ((parts[p.id] || 0) - (ff[p.id] || 0)) >= 0.01);
+            const deve = ganha && A.ps.find((p) => p.id !== ganha.id);
+            if (ganha && deve) divTxt += ` Como o dinheiro da conta da Família é dividido ${A.ps.map((p) => Math.round((ff[p.id] || 0) * 100)).join('/')}, ${esc(A.nome(deve.id))} fica devendo <strong>${brl(valor * ((parts[ganha.id] || 0) - (ff[ganha.id] || 0)))}</strong> a ${esc(A.nome(ganha.id))}.`;
+          }
+        } else if (pagador !== fam.id && regraLanc === 'Individual') divTxt = f.tipo === 'receita' ? `Fica toda com ${esc(A.nome(pagador))}: conta só nas entradas ${dl(A, pagador)} e não entra no acerto.` : `Gasto da família pago só por ${esc(A.nome(pagador))}, sem dividir: não entra no acerto.`;
+        else if (pagador === fam.id) divTxt = 'Gasto da família pago com o dinheiro da família: ninguém deve nada.';
+        else if (f.tipo === 'receita') divTxt = outro ? `${esc(A.nome(pagador))} recebeu; a parte de ${esc(A.nome(outro.id))} é <strong>${brl(valor * (parts[outro.id] || 0))}</strong>. ${nasEntradas()}` : '';
         else if (estorno) divTxt = outro ? `O crédito caiu no cartão de ${esc(A.nome(pagador))}: abate <strong>${brl(valor * (parts[outro.id] || 0))}</strong> do que ${esc(A.nome(outro.id))} deve.` : '';
         else divTxt = outro ? `${esc(A.nome(outro.id))} deve a ${esc(A.nome(pagador))} a parte que lhe cabe: <strong>${brl(valor * (parts[outro.id] || 0))}</strong>` : '';
-        if (pagador !== fam.id) {
+        if (pagador !== fam.id || f.tipo === 'receita') {
           const regras = [['Proporcional à renda', 'Pela renda'], ['50/50', 'Meio a meio'], ['Individual', 'Não dividir']];
           if (!regras.some(([v]) => v === regraLanc)) regras.push([regraLanc, nomeRegra(regraLanc).replace(/^./, (c) => c.toUpperCase())]);
-          divTxt += `<div class="muted" style="font-size:12px;margin-top:4px">${regraLanc === 'Individual' ? 'Continua aparecendo nos gastos da família' : 'Da família · ' + A.ps.map((p) => Math.round((parts[p.id] || 0) * 100)).join(' / ') + ' ' + nomeRegra(regraLanc)}</div>
+          divTxt += `<div class="muted" style="font-size:12px;margin-top:4px">${regraLanc === 'Individual' ? (f.tipo === 'receita' ? 'Continua aparecendo nas receitas da família' : 'Continua aparecendo nos gastos da família') : 'Da família · ' + A.ps.map((p) => Math.round((parts[p.id] || 0) * 100)).join(' / ') + ' ' + nomeRegra(regraLanc)}</div>
             <div class="chips" style="margin-top:8px">${regras.map(([v, n]) => `<button class="chip" aria-pressed="${regraLanc === v}" data-a="lancDivisao" data-v="${v}">${n}</button>`).join('')}</div>`;
         }
       } else if (fam && pagador === fam.id) {
@@ -947,6 +966,12 @@ function modalDetalhe(E, A, m) {
         else acerto = `${esc(A.nome(tt.dono))} deve ${brl(tt.valor)} a ${esc(A.nome(pg))}`;
       }
     }
+  } else if (m.k === 'trn' && tt.tipo === R.TIPO.receita && !R.ehAjuste(tt) && A.fam && tt.dono === A.fam.id) {
+    const regra = tt.divisao || A.fam.divisaoPadrao;
+    const recebeu = tt.pagou || R.donoDaConta(db, tt.conta);
+    acerto = regra === 'Individual' && recebeu === A.fam.id
+      ? 'Fica com a Família (não é entrada de ninguém)'
+      : A.ps.map((p) => `${esc(p.nome)} ${brl(R.parteNaReceita(db, tt, p.id))}`).join(' · ') + ` <span class="muted">(${nomeRegra(regra)})</span>`;
   } else if (m.k === 'trn' && tt.tipo === R.TIPO.transf && R.envolveFamilia(db, R.donoDaConta(db, tt.conta), R.donoDaConta(db, tt.contaDestino))) {
     acerto = tt.foraAcerto ? 'Fora do acerto (dinheiro guardado por uma pessoa só)' : 'Dividida no acerto pela parte de cada um';
   } else if (m.k === 'trn' && tt.tipo === R.TIPO.transf && R.entrePessoas(db, R.donoDaConta(db, tt.conta), R.donoDaConta(db, tt.contaDestino))) {

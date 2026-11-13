@@ -161,13 +161,41 @@ export function rendaDoMes(db, mes) {
   return r;
 }
 
-// Todas as entradas de uma pessoa no mês: rendas (entram na divisão) e
-// outras receitas dela (reembolsos, vendas), que não entram na divisão.
+// Parte de uma pessoa numa receita (reembolso, rendimento, venda).
+// Receita da Família: pela regra escolhida no lançamento (pela renda, meio a
+// meio) ou, em "Não dividir", toda de quem recebeu; caindo na conta da
+// Família sem dividir, fica só com a Família (não é entrada de ninguém).
+export function parteNaReceita(db, t, pessoaId) {
+  const fam = familia(db);
+  if (!(fam && t.dono === fam.id)) return t.dono === pessoaId ? t.valor : 0;
+  const regra = t.divisao || fam.divisaoPadrao || 'Proporcional à renda';
+  const recebeu = t.pagou || donoDaConta(db, t.conta);
+  if (regra === 'Individual') return recebeu === pessoaId ? t.valor : 0;
+  return t.valor * (partesFamilia(db, { ...t, pagou: recebeu }, mesDe(t.data))[pessoaId] || 0);
+}
+
+const receitaDoMes = (t, mes) => t.tipo === TIPO.receita && !ehAjuste(t) && confirmado(t) && mesDe(t.data) === mes;
+
+// Todas as entradas de uma pessoa no mês: rendas (entram na divisão), outras
+// receitas dela (reembolsos, vendas, rendimentos) e a parte dela nas
+// receitas da Família.
 export function entradasDoMes(db, mes, pessoaId) {
-  let divisao = 0, outras = 0;
+  const fam = familia(db);
+  let divisao = 0, outras = 0, daFamilia = 0;
   db.rendas.forEach((r) => { if (r.status !== 'Previsto' && r.pessoa === pessoaId && mesDe(r.data) === mes) divisao += r.valor; });
-  db.transacoes.forEach((t) => { if (t.tipo === TIPO.receita && !ehAjuste(t) && confirmado(t) && t.dono === pessoaId && mesDe(t.data) === mes) outras += t.valor; });
-  return { divisao: arred(divisao), outras: arred(outras), total: arred(divisao + outras) };
+  db.transacoes.forEach((t) => {
+    if (!receitaDoMes(t, mes)) return;
+    if (fam && t.dono === fam.id) daFamilia += parteNaReceita(db, t, pessoaId);
+    else if (t.dono === pessoaId) outras += t.valor;
+  });
+  return { divisao: arred(divisao), outras: arred(outras), familia: arred(daFamilia), total: arred(divisao + outras + daFamilia) };
+}
+
+// Receitas lançadas como da Família no mês (reembolsos, rendimentos...)
+export function receitasDaFamilia(db, mes) {
+  const fam = familia(db);
+  if (!fam) return 0;
+  return arred(db.transacoes.reduce((s, t) => (receitaDoMes(t, mes) && t.dono === fam.id ? s + t.valor : s), 0));
 }
 
 // Gastos de trabalho marcados como "Deduz da renda": saem da renda de quem
@@ -413,6 +441,7 @@ export function acertoDoMes(db, mes) {
       if (ehAjuste(t)) return;
       const recebeu = t.pagou || donoDaConta(db, t.conta);
       if (famId && t.dono === famId) {
+        if (recebeu === famId && t.divisao === 'Individual') return; // fica com a Família, sem dividir
         const f = partesFamilia(db, t, mes);
         if (item(t, 'receita', () => { add(recebeu, -t.valor); ps.forEach((p) => add(p.id, t.valor * (f[p.id] || 0))); })) det.receitas.push(t);
       } else if (t.dono && recebeu && t.dono !== recebeu) {
