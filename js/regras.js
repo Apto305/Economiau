@@ -252,6 +252,20 @@ export function gastosDoPerfil(db, perfilId, mes, incluirPrevistos = false) {
   }, 0));
 }
 
+// Aportes (saídas) e resgates (entradas, pelo que caiu na conta) do mês nas
+// contas do perfil. Contam nos totais de gastos e entradas do mês; não mexem
+// na divisão da renda, nas metas nem no acerto (que trata à parte).
+export function investimentosDoMes(db, perfilId, mes) {
+  let aportes = 0, resgates = 0;
+  (db.movsInv || []).forEach((m) => {
+    if (!m.conta || mesDe(m.data) !== mes) return;
+    if (perfilId && donoDaConta(db, m.conta) !== perfilId) return;
+    if (m.tipo === 'Aporte') aportes += Number(m.valor) || 0;
+    else if (m.tipo === 'Resgate') resgates += Number(m.liquido) > 0 ? Number(m.liquido) : Number(m.valor) || 0;
+  });
+  return { aportes: arred(aportes), resgates: arred(resgates) };
+}
+
 // Lançamentos que o perfil enxerga
 export function visivelNoPerfil(db, t, perfilId) {
   const fam = familia(db);

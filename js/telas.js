@@ -66,9 +66,22 @@ export function itensDoMes(E, A, mes) {
   return itens;
 }
 
+// Lançamentos entre duas datas (pela data do lançamento), de vários meses
+export function itensDoPeriodo(E, A, de, ate) {
+  const datas = [...E.db.transacoes, ...E.db.rendas, ...(E.db.movsInv || [])].map((x) => x.data).filter(Boolean).sort();
+  let ini = mesDe(de || datas[0] || hojeISO()), fim = mesDe(ate || hojeISO());
+  if (ini > fim) [ini, fim] = [fim, ini];
+  ini = somaMes(ini, -1); fim = somaMes(fim, 1); // compras no cartão contam no mês da fatura
+  const vistos = new Set(), out = [];
+  for (let m = ini, n = 0; m <= fim && n < 120; m = somaMes(m, 1), n++) {
+    itensDoMes(E, A, m).forEach((x) => { const k = x.k + ':' + x.t.id; if (!vistos.has(k)) { vistos.add(k); out.push(x); } });
+  }
+  return out.sort((a, b) => (a.t.data < b.t.data ? 1 : a.t.data > b.t.data ? -1 : (a.t.id < b.t.id ? 1 : -1)));
+}
+
 const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-export const FILTROS_PADRAO = { quem: [], tipo: 'todos', grupo: '', origem: '', tag: '', naoConf: false, busca: '' };
-export const filtrosAtivos = (f) => ['grupo', 'origem', 'tag', 'busca'].filter((k) => f[k]).length + (f.naoConf ? 1 : 0);
+export const FILTROS_PADRAO = { quem: [], tipo: 'todos', grupo: '', origem: '', tag: '', naoConf: false, busca: '', de: '', ate: '' };
+export const filtrosAtivos = (f) => ['grupo', 'origem', 'tag', 'busca'].filter((k) => f[k]).length + (f.naoConf ? 1 : 0) + (f.de || f.ate ? 1 : 0);
 
 // "De quem": nenhum botão marcado = Tudo; botões marcados se somam
 // (ex.: Só minhas + Da família)
@@ -85,9 +98,11 @@ function filtrar(E, A, itens) {
     else if (!((quem.includes('minhas') && vis && t.dono === p)
       || (quem.includes('familia') && vis && fam && t.dono === fam.id)
       || (quem.includes('entre') && ehEntre(t)))) return false;
-    if (f.tipo === 'despesas' && !R.ehGasto(t)) return false;
-    if (f.tipo === 'receitas' && t.tipo !== R.TIPO.receita) return false;
-    if (f.tipo === 'transf' && t.tipo !== R.TIPO.fatura && t.tipo !== R.TIPO.transf && !t.ehInv) return false;
+    if (f.tipo === 'despesas' && !R.ehGasto(t) && t.ehInv !== 'Aporte') return false;
+    if (f.tipo === 'receitas' && t.tipo !== R.TIPO.receita && t.ehInv !== 'Resgate') return false;
+    if (f.tipo === 'transf' && t.tipo !== R.TIPO.fatura && t.tipo !== R.TIPO.transf) return false;
+    if (f.de && t.data < f.de) return false;
+    if (f.ate && t.data > f.ate) return false;
     if (f.grupo) { const c = R.porId(E.db.categorias, t.categoria); if (!c || (c.id !== f.grupo && c.grupo !== f.grupo)) return false; }
     if (f.origem && t.conta !== f.origem && t.cartao !== f.origem && t.contaDestino !== f.origem) return false;
     if (f.tag && !R.tagsDe(t).includes(R.normTag(f.tag))) return false;
@@ -97,7 +112,7 @@ function filtrar(E, A, itens) {
   });
 }
 
-const sinalValor = (t) => (t.tipo === R.TIPO.receita || t.tipo === R.TIPO.estorno ? 1 : t.tipo === R.TIPO.despesa ? -1 : 0);
+const sinalValor = (t) => (t.ehInv ? (t.ehInv === 'Aporte' ? -1 : 1) : t.tipo === R.TIPO.receita || t.tipo === R.TIPO.estorno ? 1 : t.tipo === R.TIPO.despesa ? -1 : 0);
 function valorItem(t) {
   const s = sinalValor(t);
   if (s > 0) return `<span class="valor rec">${sens('+ ' + brl(t.valor))}</span>`;
@@ -232,12 +247,14 @@ export function telaInicio(E) {
   const ehFam = fam && p === fam.id;
   const nomeM = nomeMesAno(mes).split(' ')[0].toLowerCase();
   const dbp = R.comPrevistos(db, mes);
-  const gastos = R.gastosDoPerfil(db, p, mes);
-  const previstos = R.gastosDoPerfil(dbp, p, mes, true);
+  const inv = R.investimentosDoMes(db, p, mes);
+  const gastos = arred(R.gastosDoPerfil(db, p, mes) + inv.aportes);
+  const previstos = arred(R.gastosDoPerfil(dbp, p, mes, true) + inv.aportes);
   const ac = R.acertoDoMes(db, mes);
   const renda = R.rendaDoMes(db, mes);
   const ent = ehFam ? null : R.entradasDoMes(db, mes, p);
-  const rendaPerfil = ehFam ? Object.values(renda).reduce((a, b) => a + b, 0) : ent.total;
+  const rendaPerfil = arred((ehFam ? Object.values(renda).reduce((a, b) => a + b, 0) : ent.total) + inv.resgates);
+  const invTxt = (v, n) => (v ? ' · inclui ' + sens(brl(v)) + ' de ' + n : '');
   const contas = db.contas.filter((c) => R.ativo(c) && (ehFam || c.dono === p));
   const saldoTotal = contas.reduce((s, c) => s + R.saldoConta(db, c), 0);
   const cartoes = db.cartoes.filter((c) => R.ativo(c) && (ehFam || c.dono === p || R.pagaPorDe(db, c) === p));
@@ -246,8 +263,8 @@ export function telaInicio(E) {
   const sobra = rendaPerfil - previstos;
 
   const kpis = `<div class="kpis">
-    <div class="kpi"><div class="r">${ehFam ? 'Gastos da família' : 'Seus gastos'}</div><div class="v">${sens(brl(gastos))}</div><div class="s">${previstos > gastos ? 'com previstos ' + sens(brl(previstos)) : ehFam ? 'no mês' : 'pessoais + sua parte na família'}</div></div>
-    <div class="kpi"><div class="r">${ehFam ? 'Renda da família' : 'Suas entradas'}</div><div class="v rec">${sens(brl(rendaPerfil))}</div><div class="s">${rendaPerfil ? (ehFam ? 'só o que entra na divisão · ' + A.ps.map((x) => A.nome(x.id) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') : (ent.outras ? sens(brl(ent.divisao)) + ' na divisão (' + Math.round((fr[p] || 0) * 100) + '%) + ' + sens(brl(ent.outras)) + ' de outras entradas' : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%')) : 'nenhuma entrada lançada em ' + nomeM}</div></div>
+    <div class="kpi"><div class="r">${ehFam ? 'Gastos da família' : 'Seus gastos'}</div><div class="v">${sens(brl(gastos))}</div><div class="s">${previstos > gastos ? 'com previstos ' + sens(brl(previstos)) : ehFam ? 'no mês' : 'pessoais + sua parte na família'}${invTxt(inv.aportes, 'aportes')}</div></div>
+    <div class="kpi"><div class="r">${ehFam ? 'Renda da família' : 'Suas entradas'}</div><div class="v rec">${sens(brl(rendaPerfil))}</div><div class="s">${rendaPerfil ? (ehFam ? 'só o que entra na divisão · ' + A.ps.map((x) => A.nome(x.id) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') : (ent.outras ? sens(brl(ent.divisao)) + ' na divisão (' + Math.round((fr[p] || 0) * 100) + '%) + ' + sens(brl(ent.outras)) + ' de outras entradas' : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%')) + invTxt(inv.resgates, 'resgates') : 'nenhuma entrada lançada em ' + nomeM}</div></div>
     <div class="kpi"><div class="r">${ehFam ? 'Em todas as contas' : 'Nas suas contas'}</div><div class="v">${sens(brl(saldoTotal))}</div><div class="s">${contas.length} conta${contas.length === 1 ? '' : 's'}</div></div>
     <div class="kpi"><div class="r">Sobra do mês</div><div class="v ${sobra < 0 ? 'desp' : ''}">${sens(brlSinal(arred(sobra)))}</div><div class="s">${rendaPerfil ? 'renda ' + sens(brl(rendaPerfil)) + ' − gastos ' + sens(brl(previstos)) : (ehFam ? 'lance a renda de ' : 'lance as entradas de ') + nomeM + ' para calcular'}</div></div>
   </div>`;
@@ -286,14 +303,15 @@ export function telaInicio(E) {
 export function telaTransacoes(E) {
   const A = apoio(E);
   const f = E.filtros || FILTROS_PADRAO;
-  const todos = itensDoMes(E, A, E.mes);
+  const periodo = !!(f.de || f.ate);
+  const todos = periodo ? itensDoPeriodo(E, A, f.de, f.ate) : itensDoMes(E, A, E.mes);
   const itens = filtrar(E, A, todos);
   const ehFam = A.fam && E.perfil === A.fam.id;
   const QUEM = [['tudo', 'Tudo'], ['minhas', 'Só minhas'], ['familia', 'Da família'], ['entre', 'Entre vocês']].filter(([id]) => !(ehFam && (id === 'minhas' || id === 'familia')));
   const TIPOS = [['todos', 'Todos os tipos'], ['despesas', 'Despesas'], ['receitas', 'Receitas'], ['transf', 'Transferências']];
   const reais = itens.filter((x) => !x.t.virtual);
   const gastos = reais.filter(({ t }) => sinalValor(t) < 0).reduce((s, { t }) => s + t.valor, 0);
-  const receitas = reais.filter(({ t }) => t.tipo === R.TIPO.receita).reduce((s, { t }) => s + t.valor, 0);
+  const receitas = reais.filter(({ t }) => sinalValor(t) > 0 && t.tipo !== R.TIPO.estorno).reduce((s, { t }) => s + t.valor, 0);
   const grupos = [];
   itens.forEach((x) => { const g = grupos[grupos.length - 1]; if (g && g.data === x.t.data) g.itens.push(x); else grupos.push({ data: x.t.data, itens: [x] }); });
   const cel = `<div class="lista-trans">${grupos.length ? grupos.map((g) => `<div class="secao-titulo"><span>${g.data === A.hoje ? 'Hoje' : diaSemana(g.data).replace(/^./, (c) => c.toUpperCase())}, ${dataCurta(g.data)}</span></div><div class="lista">${g.itens.map((x) => itemTransacao(E, A, x)).join('')}</div>`).join('') : '<div class="vazio">Nenhum lançamento com esses filtros.</div>'}</div>`;
@@ -314,7 +332,8 @@ export function telaTransacoes(E) {
       ${n ? '<button class="link" style="margin-left:4px" data-a="limparFiltros">Limpar</button>' : ''}</div>
     <div class="info-caixa" style="display:flex;gap:18px;flex-wrap:wrap;background:var(--surf)"><span><span class="muted">Gastos </span><strong>${sens(brl(gastos))}</strong></span><span><span class="muted">Entradas </span><strong class="rec">${sens(brl(receitas))}</strong></span><span class="muted">${reais.length} lançamento${reais.length === 1 ? '' : 's'}${itens.length > reais.length ? ' + ' + (itens.length - reais.length) + ' previsto' + (itens.length - reais.length === 1 ? '' : 's') : ''}</span></div>
     <div style="margin-top:8px">${cel}${pc}</div>`;
-  return casca(E, 'Transações', corpo, { acoes: seletorMes(E) });
+  const faixa = periodo ? `<div style="display:flex;align-items:center;gap:6px;height:40px;padding:0 6px 0 12px;border-radius:12px;background:var(--surf)"><button class="link" style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap" data-a="abrirFiltros">${f.de ? dataBR(f.de) : 'início'} – ${f.ate ? dataBR(f.ate) : 'hoje'}</button><button class="icone-btn" style="width:30px;height:30px" data-a="limparPeriodo" aria-label="Voltar ao mês">${ic('fechar', 14)}</button></div>` : '';
+  return casca(E, 'Transações', corpo, { acoes: periodo ? faixa : seletorMes(E) });
 }
 
 // ---------------------------------------------------------------- acerto
@@ -839,7 +858,11 @@ function modalFiltros(E, A) {
   const tags = R.todasAsTags(db);
   const corpo = `
     <label class="campo"><span>Buscar na descrição</span><input class="entrada" data-filtro="busca" value="${esc(f.busca)}" placeholder="Ex.: mercado" autocomplete="off"></label>
-    <label class="campo"><span>Categoria</span><select class="entrada" data-filtro="grupo"><option value="">Todas</option>${grupos.map((g) => `<option value="${g.id}" ${f.grupo === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}</select></label>
+    <div class="campo"><span>Período</span>
+      <div class="chips" style="margin-bottom:8px">${[['', 'Só o mês escolhido'], ['3m', 'Últimos 3 meses'], ['ano', 'Este ano'], ['12m', 'Últimos 12 meses']].map(([v, n]) => `<button class="chip" aria-pressed="${v === '' ? !(f.de || f.ate) : f.periodo === v && !!f.de}" data-a="filtroPeriodo" data-v="${v}">${n}</button>`).join('')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label><span class="muted" style="font-size:12px;display:block">De</span><input class="entrada" type="date" data-filtro="de" value="${esc(f.de || '')}"></label><label><span class="muted" style="font-size:12px;display:block">Até</span><input class="entrada" type="date" data-filtro="ate" value="${esc(f.ate || '')}"></label></div>
+      <div class="muted" style="font-size:12px;margin-top:4px">Pela data do lançamento (no cartão, a data da compra). Com período, a lista junta vários meses.</div></div>
+    <label class="campo"><span>Categoria</span><select class="entrada" data-filtro="grupo"><option value="">Todas</option>${grupos.map((g) => `<option value="${g.id}" ${f.grupo === g.id ? 'selected' : ''}>${esc(g.nome)}${g.tipo === 'Despesa' ? ' (grupo todo)' : ''}</option>${R.porOrdem(db, db.categorias.filter((c) => c.grupo === g.id && R.ativo(c))).map((c) => `<option value="${c.id}" ${f.grupo === c.id ? 'selected' : ''}>&nbsp;&nbsp;&nbsp;${esc(c.nome)}</option>`).join('')}`).join('')}</select></label>
     <label class="campo"><span>Conta ou cartão</span><select class="entrada" data-filtro="origem"><option value="">Todos</option>${donosOrig.map(blocoOrig).join('')}${semDono.map(([id, n]) => `<option value="${id}" ${f.origem === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
     <div class="campo"><span>Tag</span>${tags.length ? `<div class="chips">${tags.map((x) => `<button class="chip" aria-pressed="${f.tag === x}" data-a="filtroTag" data-v="${esc(x)}">#${esc(x)}</button>`).join('')}</div>` : '<div class="muted" style="font-size:13px">Nenhuma tag criada ainda. Elas aparecem aqui depois que você usar uma num lançamento.</div>'}</div>
     <div class="campo" style="display:flex;align-items:center;gap:10px"><span style="flex:1;margin:0;font-size:15px;color:var(--text)">Só os não conferidos</span><button class="chip" aria-pressed="${f.naoConf}" data-a="filtroNaoConf">${f.naoConf ? 'Sim' : 'Não'}</button></div>

@@ -304,6 +304,15 @@ const A = {
   abrirFiltros() { E.modal = { tipo: 'filtros' }; desenhar(); },
   limparFiltros() { E.filtros = { ...T.FILTROS_PADRAO, quem: E.filtros.quem, tipo: E.filtros.tipo }; if (E.modal && E.modal.tipo === 'filtros') E.modal = null; desenhar(); },
   filtroTag(d) { E.filtros.tag = E.filtros.tag === d.v ? '' : d.v; desenhar(); },
+  filtroPeriodo(d) {
+    const hoje = hojeISO();
+    E.filtros.periodo = d.v;
+    if (!d.v) { E.filtros.de = ''; E.filtros.ate = ''; }
+    else if (d.v === 'ano') { E.filtros.de = hoje.slice(0, 4) + '-01-01'; E.filtros.ate = hoje; }
+    else { E.filtros.de = somaMes(mesDe(hoje), d.v === '3m' ? -2 : -11) + '-01'; E.filtros.ate = hoje; }
+    desenhar();
+  },
+  limparPeriodo() { E.filtros.de = ''; E.filtros.ate = ''; E.filtros.periodo = ''; desenhar(); },
   filtroNaoConf() { E.filtros.naoConf = !E.filtros.naoConf; desenhar(); },
   menuLancar() { if (window.innerWidth >= 1100) A.novoLancamento(); else { E.modal = { tipo: 'menu' }; desenhar(); } },
   lancarTipo(d) { A.novoLancamento({ v: d.v }); },
@@ -1125,7 +1134,7 @@ document.addEventListener('input', (ev) => {
 document.addEventListener('change', (ev) => {
   const el = ev.target;
   if (!el.isConnected) return; // campo que acabou de ser redesenhado
-  if (el.dataset && el.dataset.filtro) { E.filtros[el.dataset.filtro] = el.value; desenhar(); return; }
+  if (el.dataset && el.dataset.filtro) { E.filtros[el.dataset.filtro] = el.value; if (el.dataset.filtro === 'de' || el.dataset.filtro === 'ate') E.filtros.periodo = 'outro'; desenhar(); return; }
   if (el.dataset && el.dataset.novaCat) { E.novaCat = E.novaCat || {}; E.novaCat[el.dataset.novaCat] = el.value; return; }
   if (el.dataset && el.dataset.saldoBanco) { setTimeout(desenhar, 0); return; }
   if (el.dataset && el.dataset.totalBanco) {
