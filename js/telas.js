@@ -285,36 +285,61 @@ export function telaInicio(E) {
     return `<a class="acerto-hero" href="#/acerto">${A.avatar(r.de, 40)}${ic('acerto', 20, 'style="color:var(--f)"')}${A.avatar(r.para, 40)}<span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto do mês até agora</span><strong style="font-size:15px">${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>${ic('seta', 18)}</a>`;
   })();
 
+  const ultimoDia = (() => { const [a, m] = mes.split('-').map(Number); return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10); })();
+  const dbPrev = R.comPrevistos(db, mes);
+  const ehMesAtual = mes === mesDe(A.hoje);
+  const previstoConta = (c) => (ehMesAtual ? arred(R.saldoConta(dbPrev, c, ultimoDia, true)) : null);
   const contasCard = `<div class="secao-titulo"><span>Contas</span><a href="#/contas">Ver todas</a></div>
-    <div class="lista">${contas.length ? contas.map((c) => `<a class="item" href="#/contas"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">${esc(c.tipo || '')}</span></span><span class="valor">${sens(brl(R.saldoConta(db, c)))}</span></a>`).join('') : `<div class="vazio">Nenhuma conta cadastrada. <button class="link" data-a="ir" data-v="contas">Cadastrar</button></div>`}</div>`;
+    <div class="lista">${contas.length ? contas.map((c) => { const sal = arred(R.saldoConta(db, c)); const pv = previstoConta(c); return `<a class="item" href="#/contas"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">${esc(c.tipo || '')}</span></span><span style="text-align:right"><span class="valor" style="display:block">${sens(brl(sal))}</span>${pv !== null && Math.abs(pv - sal) >= 0.01 ? `<span class="muted" style="font-size:12px">previsto ${sens(brl(pv))}</span>` : ''}</span></a>`; }).join('') : `<div class="vazio">Nenhuma conta cadastrada. <button class="link" data-a="ir" data-v="contas">Cadastrar</button></div>`}</div>`;
 
-  const faturasCard = `<div class="secao-titulo"><span>Faturas</span><a href="#/faturas">Ver faturas</a></div>
-    <div class="lista">${cartoes.length ? cartoes.map((c) => {
-      const f = R.faturaAtual(db, c, A.hoje);
-      const total = f ? R.totalFatura(db, f.id) : 0;
-      const sit = f ? R.situacaoFatura(db, f, A.hoje) : '';
-      return `<a class="item" href="#/faturas"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0])}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${f ? sit + ' · vence ' + dataCurta(f.vencimento) : 'Sem fatura aberta'}</span></span><span class="valor">${sens(brl(total))}</span></a>`;
-    }).join('') : '<div class="vazio">Nenhum cartão neste perfil.</div>'}</div>`;
+  const fats = cartoes.map((c) => { const f = R.faturaAtual(db, c, A.hoje); return { c, f, total: f ? R.totalFatura(db, f.id) : 0, sit: f ? R.situacaoFatura(db, f, A.hoje) : '' }; });
+  const aPagar = fats.filter((x) => x.f && x.sit !== 'Paga' && x.total > 0);
+  const totalAPagar = arred(aPagar.reduce((t, x) => t + x.total, 0));
+  const proxVenc = aPagar.map((x) => x.f.vencimento).sort()[0];
+  const corSit = (sit) => (sit === 'Aberta' ? 'var(--accent-txt)' : sit === 'Fechada' ? 'var(--aviso)' : 'var(--muted)');
+  const faturasCard = `<div class="secao-titulo"><span>Faturas de cartão</span><a href="#/faturas">Abrir faturas</a></div>
+    <div class="lista">${fats.length ? fats.map(({ c, f, total, sit }) => `<a class="item" href="#/faturas"><span class="chip-cartao" style="background:${corConta(c.cor)}"><span></span></span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${f ? `<strong style="color:${corSit(sit)}">${sit}</strong> · ${sit === 'Aberta' ? 'fecha ' + dataCurta(f.fechamento) : 'vence ' + dataCurta(f.vencimento)}` : 'Sem fatura aberta'}</span></span><span class="valor">${sens(brl(total))}</span></a>`).join('') : '<div class="vazio">Nenhum cartão neste perfil.</div>'}
+    ${aPagar.length ? `<div class="item" style="font-size:13px"><span class="muted" style="flex:1">Total a pagar${proxVenc ? ' · próximo vencimento ' + dataCurta(proxVenc) : ''}</span><strong>${sens(brl(totalAPagar))}</strong></div>` : ''}</div>`;
 
   const prev = itensDoMes(E, A, mes).filter((x) => x.t.virtual && R.visivelNoPerfil(db, x.t, p)).sort((a, b) => (a.t.data < b.t.data ? -1 : 1));
   const fixasCard = `<div class="secao-titulo"><span>Contas fixas ainda não lançadas</span><a href="#/fixas">Ver todas</a></div>
     <div class="lista">${prev.length ? prev.slice(0, 5).map((x) => itemTransacao(E, A, x)).join('') : `<div class="vazio">Todas as contas fixas de ${esc(nomeM)} já foram lançadas.</div>`}</div>`;
 
-  const ultimos = `<div class="secao-titulo"><span>Últimos lançamentos</span><a href="#/transacoes">Ver todos</a></div>
-    <div class="lista">${itens.length ? itens.map((x) => itemTransacao(E, A, x)).join('') : `<div class="vazio">Nada lançado em ${esc(nomeM)} ainda.</div>`}</div>`;
+  const ultimos = `<div class="secao-titulo"><span>Últimos lançamentos</span><a href="#/transacoes">Ver todas as transações</a></div>
+    <div class="lista so-cel">${itens.length ? itens.map((x) => itemTransacao(E, A, x)).join('') : `<div class="vazio">Nada lançado em ${esc(nomeM)} ainda.</div>`}</div>
+    <div class="ult-tabela so-pc" role="table" aria-label="Últimos lançamentos">${itens.length ? `<div class="ult-lin cab" role="row"><span>Data</span><span>Descrição</span><span>Categoria</span><span>Conta ou cartão</span><span>De quem</span><span class="dir">Valor</span></div>` + itens.map(({ k, t }) => `<button class="ult-lin" role="row" data-a="abrirDetalhe" data-id="${esc(t.id)}" data-k="${k}"><span class="muted">${dataCurta(t.data)}</span><span class="corta" style="font-weight:700">${esc(t.desc || t.tipo)}</span><span class="corta soft">${esc(A.catCurta(t.categoria) || (t.ehRenda ? 'Renda' : t.ehInv ? 'Investimento' : ''))}</span><span class="corta soft">${esc(A.origem(t))}</span><span>${pillDono(A, t.dono)}</span><span class="dir">${valorItem(t)}</span></button>`).join('') : `<div class="vazio">Nada lançado em ${esc(nomeM)} ainda.</div>`}</div>`;
 
   // blocos do Início: cada perfil escolhe quais aparecem, a ordem e o tamanho
   const cfg = T3.blocosDoInicio(E);
+  const comResumo = cfg.some((b) => b.id === 'resumo' && b.on);
   const feitos = { resumo: () => kpis, acerto: () => acertoCard, contas: () => contasCard, faturas: () => faturasCard, fixas: () => fixasCard, ultimos: () => ultimos };
   const html = cfg.filter((b) => b.on).map((b) => {
     const conteudo = feitos[b.id] ? feitos[b.id]() : T3.blocoExtra(E, A, b.id, res);
     if (!conteudo) return '';
-    return `<div class="bloco ${b.largo || b.id === 'resumo' ? 'larga' : ''}" data-bloco="${b.id}">${conteudo}</div>`;
+    // no computador, o resumo (e o acerto, que entra nele) fica na faixa de cima
+    const soCel = b.id === 'resumo' || (b.id === 'acerto' && comResumo) ? 'so-cel' : '';
+    const sem = b.id === 'resumo' || b.id === 'acerto' ? 'sem-cartao' : '';
+    return `<div class="bloco ${b.largo || b.id === 'resumo' ? 'larga' : ''} ${soCel} ${sem}" data-bloco="${b.id}">${conteudo}</div>`;
   }).join('');
-  const acoes = `${seletorMes(E)}${botaoOlho(E)}<button class="icone-btn" data-a="personalizarInicio" aria-label="Personalizar o Início">${ic('camadas', 20)}</button>`;
-  const corpo = `<div class="grade grade-inicio">${html}</div>
-    <div style="text-align:center;margin-top:16px"><button class="link" data-a="personalizarInicio">${ic('camadas', 15, 'style="vertical-align:-3px"')} Personalizar o Início</button></div>`;
-  const titulo = `<button class="so-cel icone-btn" style="display:inline-flex;vertical-align:middle;margin:-6px 6px -6px -6px;width:auto;padding:0 4px" data-a="ir" data-v="perfis" aria-label="Trocar perfil">${A.avatar(p, 34)}</button>${ehFam ? 'Família' : 'Olá, ' + esc(A.nome(p))}`;
+  // faixa de números do computador (como no protótipo)
+  const r = ac.resultado;
+  const kpi = (rot, val, nota, cor, href) => `<a class="kpi-pc" href="#/${href}"><span class="r">${rot}</span><span class="v" style="${cor ? 'color:' + cor : ''}">${val}</span><span class="s">${nota}</span></a>`;
+  const prevTotal = ehMesAtual ? arred(contas.reduce((t, c) => t + R.saldoConta(dbPrev, c, ultimoDia, true), 0)) : null;
+  const faixa = comResumo ? `<section class="kpis-pc so-pc" aria-label="Resumo do mês">
+      ${kpi('Saldo em contas', sens(brl(saldoTotal)), prevTotal !== null && Math.abs(prevTotal - saldoTotal) >= 0.01 ? 'Previsto em ' + dataCurta(ultimoDia) + ': ' + sens(brl(prevTotal)) : contas.length + ' conta' + (contas.length === 1 ? '' : 's'), '', 'contas')}
+      ${kpi('Entradas de ' + nomeM, sens(brl(rendaPerfil)), rendaPerfil ? (ehFam ? A.ps.map((x) => esc(A.nome(x.id)) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%' + (res.entPrev ? ' · + ' + sens(brl(res.entPrev)) + ' previstas' : '')) : 'nada lançado ainda', 'var(--receita)', ehFam ? 'rendas' : 'transacoes')}
+      ${kpi('Gastos de ' + nomeM, sens(brl(gastos)), prevTxt || (ehFam ? 'no mês' : 'seus + sua parte da família (' + Math.round((fr[p] || 0) * 100) + '%)'), 'var(--despesa)', 'transacoes')}
+      ${kpi('Sobra do mês', sens(brlSinal(arred(sobra))), res.reserva ? 'metas ainda reservam ' + sens(brl(res.reserva)) : 'entradas − gastos previstos', sobra < 0 ? 'var(--despesa)' : '', 'planejamento')}
+      ${kpi('Faturas a pagar', sens(brl(totalAPagar)), aPagar.length ? (proxVenc ? 'vence em ' + dataCurta(proxVenc) + ' · ' : '') + aPagar.length + ' fatura' + (aPagar.length === 1 ? '' : 's') : 'nada a pagar agora', '', 'faturas')}
+      ${kpi('Acerto do mês', r ? sens(brl(r.valor)) : 'Zerado', r ? esc(A.nome(r.de)) + ' transfere para ' + esc(A.nome(r.para)) : 'Ninguém deve nada', r ? 'var(--f-txt)' : 'var(--ok-txt)', 'acerto')}
+    </section>` : '';
+  const acoes = `<span class="so-cel">${seletorMes(E)}</span>
+    <label class="busca-inicio so-pc">${ic('busca', 16)}<input data-busca-inicio aria-label="Buscar lançamentos" placeholder="Buscar lançamentos, valores, categorias"></label>
+    ${botaoOlho(E)}<button class="icone-btn so-cel" data-a="personalizarInicio" aria-label="Personalizar o Início">${ic('camadas', 20)}</button>
+    <button class="btn btn-peq btn-sec so-pc" data-a="personalizarInicio">${ic('ajustes', 16, 'style="vertical-align:-3px;margin-right:6px"')}Personalizar</button>`;
+  const corpo = `${faixa}<div class="grade grade-inicio">${html}</div>
+    <div class="so-cel" style="text-align:center;margin-top:16px"><button class="link" data-a="personalizarInicio">${ic('camadas', 15, 'style="vertical-align:-3px"')} Personalizar o Início</button></div>`;
+  const titulo = `<span class="so-cel-i"><button class="so-cel icone-btn" style="display:inline-flex;vertical-align:middle;margin:-6px 6px -6px -6px;width:auto;padding:0 4px" data-a="ir" data-v="perfis" aria-label="Trocar perfil">${A.avatar(p, 34)}</button>${ehFam ? 'Família' : 'Olá, ' + esc(A.nome(p))}</span><span class="so-pc" style="display:inline-flex;align-items:center;gap:20px">Início <span style="font-size:14px;letter-spacing:0">${seletorMes(E)}</span></span>`;
   return casca(E, titulo, corpo, { acoes, acertoTxt: ac.resultado ? brl(ac.resultado.valor).replace(',00', '') : '' });
 }
 

@@ -1446,6 +1446,11 @@ document.addEventListener('focusout', (ev) => {
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && E.modal) { E.modal.tipo === 'seletor' ? A.fecharSeletor() : A.fecharModal(); }
   const tag = (ev.target.tagName || '').toLowerCase();
+  if (ev.key === 'Enter' && ev.target.dataset && 'buscaInicio' in ev.target.dataset) {
+    ev.preventDefault();
+    E.filtros = { ...T.FILTROS_PADRAO, busca: ev.target.value.trim() };
+    ir('transacoes'); return;
+  }
   if ((ev.key === 'n' || ev.key === 'N') && !E.modal && E.fase === 'pronto' && E.perfil && !['input', 'textarea', 'select'].includes(tag) && !ev.ctrlKey && !ev.metaKey) { ev.preventDefault(); A.novoLancamento(); }
   if (ev.key === 'Enter' && tag === 'input' && ev.target.dataset.campo === 'tagNova') { ev.preventDefault(); const f = formAtual(); addTag(f, ev.target.value); desenhar(); setTimeout(() => { const el = document.querySelector('[data-campo="tagNova"]'); if (el) el.focus(); }, 30); return; }
   if (ev.key === 'Enter' && E.modal && E.modal.tipo === 'lancar' && tag === 'input') { ev.preventDefault(); ev.target.blur(); }
