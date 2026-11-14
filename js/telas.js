@@ -762,11 +762,21 @@ function modalLancar(E, A, m) {
             if (ganha && deve) divTxt += ` Como o dinheiro da conta da Família é dividido ${A.ps.map((p) => Math.round((ff[p.id] || 0) * 100)).join('/')}, ${esc(A.nome(deve.id))} fica devendo <strong>${brl(valor * ((parts[ganha.id] || 0) - (ff[ganha.id] || 0)))}</strong> a ${esc(A.nome(ganha.id))}.`;
           }
         } else if (pagador !== fam.id && regraLanc === 'Individual') divTxt = f.tipo === 'receita' ? `Fica toda com ${esc(A.nome(pagador))}: conta só nas entradas ${dl(A, pagador)} e não entra no acerto.` : `Gasto da família pago só por ${esc(A.nome(pagador))}, sem dividir: não entra no acerto.`;
-        else if (pagador === fam.id) divTxt = 'Gasto da família pago com o dinheiro da família: ninguém deve nada.';
+        else if (pagador === fam.id) {
+          if (regraLanc === 'Individual') divTxt = estorno ? 'Crédito na conta da Família: volta para o dinheiro da casa, sem mexer nos gastos pessoais nem no acerto.' : 'Pago com o dinheiro da família e fica só com a Família: sai das economias da casa e não entra nos gastos pessoais de ninguém nem no acerto.';
+          else {
+            divTxt = 'Pago com o dinheiro da família. Entra nos gastos de cada um: ' + A.ps.map((p) => `${esc(A.nome(p.id))} ${brl(valor * (parts[p.id] || 0))}`).join(' · ') + '.';
+            const ff = R.fracoesFamilia(db, mesDe(f.data));
+            const deve = A.ps.find((p) => valor * ((parts[p.id] || 0) - (ff[p.id] || 0)) >= 0.01);
+            const recebe = deve && A.ps.find((p) => p.id !== deve.id);
+            if (deve && recebe) divTxt += ` Como o dinheiro da conta da Família é dividido ${A.ps.map((p) => Math.round((ff[p.id] || 0) * 100)).join('/')}, ${esc(A.nome(deve.id))} fica devendo <strong>${brl(valor * ((parts[deve.id] || 0) - (ff[deve.id] || 0)))}</strong> a ${esc(A.nome(recebe.id))}.`;
+            else divTxt += ' Ninguém deve nada.';
+          }
+        }
         else if (f.tipo === 'receita') divTxt = outro ? `${esc(A.nome(pagador))} recebeu; a parte de ${esc(A.nome(outro.id))} é <strong>${brl(valor * (parts[outro.id] || 0))}</strong>. ${nasEntradas()}` : '';
         else if (estorno) divTxt = outro ? `O crédito caiu no cartão de ${esc(A.nome(pagador))}: abate <strong>${brl(valor * (parts[outro.id] || 0))}</strong> do que ${esc(A.nome(outro.id))} deve.` : '';
         else divTxt = outro ? `${esc(A.nome(outro.id))} deve a ${esc(A.nome(pagador))} a parte que lhe cabe: <strong>${brl(valor * (parts[outro.id] || 0))}</strong>` : '';
-        if (pagador !== fam.id || f.tipo === 'receita') {
+        {
           const regras = [['Proporcional à renda', 'Pela renda'], ['50/50', 'Meio a meio'], ['Individual', 'Não dividir']];
           if (!regras.some(([v]) => v === regraLanc)) regras.push([regraLanc, nomeRegra(regraLanc).replace(/^./, (c) => c.toUpperCase())]);
           divTxt += `<div class="muted" style="font-size:12px;margin-top:4px">${regraLanc === 'Individual' ? (f.tipo === 'receita' ? 'Continua aparecendo nas receitas da família' : 'Continua aparecendo nos gastos da família') : 'Da família · ' + A.ps.map((p) => Math.round((parts[p.id] || 0) * 100)).join(' / ') + ' ' + nomeRegra(regraLanc)}</div>
@@ -959,7 +969,8 @@ function modalDetalhe(E, A, m) {
   if (m.k !== 'ren' && R.ehGasto(tt)) {
     if (A.fam && tt.dono === A.fam.id) {
       const parts = R.partesFamilia(db, tt, R.mesCompetencia(db, tt));
-      acerto = A.ps.map((p) => `${esc(p.nome)} ${brl(tt.valor * (parts[p.id] || 0))}`).join(' · ') + ` <span class="muted">(${nomeRegra(tt.divisao || A.fam.divisaoPadrao)})</span>`;
+      if ((tt.divisao || A.fam.divisaoPadrao) === 'Individual' && R.quemPagou(db, tt) === A.fam.id) acerto = 'Fica com a Família: saiu do dinheiro da casa, não entra nos gastos pessoais';
+      else acerto = A.ps.map((p) => `${esc(p.nome)} ${brl(tt.valor * (parts[p.id] || 0))}`).join(' · ') + ` <span class="muted">(${nomeRegra(tt.divisao || A.fam.divisaoPadrao)})</span>`;
     } else {
       const pg = R.quemPagou(db, tt);
       if (tt.dono && pg && tt.dono !== pg) {

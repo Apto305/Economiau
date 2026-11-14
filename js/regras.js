@@ -239,8 +239,12 @@ export function fracoesRenda(db, mes) {
 // Parte de cada pessoa num lançamento da Família
 export function partesFamilia(db, t, mes) {
   const ps = pessoasReais(db);
-  let regra = t.divisao || (familia(db) || {}).divisaoPadrao || 'Proporcional à renda';
-  // pago pela conta da Família: não há "quem pagou" para Individual/Personalizada
+  const fam = familia(db);
+  let regra = t.divisao || (fam || {}).divisaoPadrao || 'Proporcional à renda';
+  // "Não dividir" pago com o dinheiro da Família: fica só com a Família (sai das
+  // economias da casa), não é de ninguém em particular
+  if (regra === 'Individual' && fam && t.pagou === fam.id) { const z = {}; ps.forEach((p) => (z[p.id] = 0)); return z; }
+  // sem "quem pagou" (pessoa) para Individual/Personalizada: divide pela renda
   if ((regra === 'Individual' || regra === 'Personalizada') && !ps.some((p) => p.id === t.pagou)) regra = 'Proporcional à renda';
   const f = {};
   if (regra === '50/50') ps.forEach((p) => (f[p.id] = 1 / ps.length));
@@ -437,6 +441,7 @@ export function acertoDoMes(db, mes) {
       const v = t.tipo === TIPO.estorno ? -t.valor : t.valor;
       const pagou = quemPagou(db, t);
       if (famId && t.dono === famId) {
+        if (pagou === famId && t.divisao === 'Individual') return; // dinheiro da Família, sem dividir: fica com a Família
         const f = partesFamilia(db, { ...t, pagou }, mes);
         add(pagou, v);
         ps.forEach((p) => add(p.id, -v * (f[p.id] || 0)));
