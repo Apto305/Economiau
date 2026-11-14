@@ -554,7 +554,8 @@ export function telaPlanejamento(E) {
     <div class="lista">${prev.length ? prev.slice(0, 6).map((x) => `<div class="item"><span class="principal-txt"><span class="titulo">${esc(x.desc)}</span><span class="sub">${dataCurta(x.data)} · ${esc(nomeCat(db, x.categoria))}</span></span><span class="valor">${sens(brl(x.valor))}</span></div>`).join('') + (prev.length > 6 ? `<a class="item" href="#/fixas"><span class="principal-txt"><span class="sub">e mais ${prev.length - 6}</span></span>${ic('seta', 16)}</a>` : '') : `<div class="vazio">Nenhuma conta fixa falta lançar em ${esc(nomeM)}.</div>`}</div>
     ${prev.length ? `<p class="muted" style="font-size:12.5px;margin:8px 4px 0">Faltam lançar ${prev.length} · ${sens(brl(totPrev))}${!ehFam ? ' (sua parte)' : ''}</p>` : ''}`;
 
-  const corpo = `<div class="grade"><div>${hero}<div style="margin-top:12px">${barra}</div><div style="margin-top:12px">${tabela}</div></div><div>${metas}${fixas}</div></div>`;
+  const relat = `<a class="item" href="#/relatorios" style="margin-top:12px;border-radius:var(--radius);background:var(--surf)">${ic('grafico', 20, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">Relatórios</span><span class="sub">Por grupo, mês a mês e quem pagou</span></span>${ic('seta', 18)}</a>`;
+  const corpo = `<div class="grade"><div>${hero}<div style="margin-top:12px">${barra}</div><div style="margin-top:12px">${tabela}</div>${relat}</div><div>${metas}${fixas}</div></div>`;
   return casca(E, 'Planejamento', corpo, { acoes: seletorMes(E) });
 }
 
@@ -606,3 +607,108 @@ export function modalMeta(E, A, m) {
     ${meta ? `<button class="btn btn-perigo btn-largo" style="margin-top:8px" data-a="excluirMeta">${ic('lixo', 18)}Excluir meta</button>` : ''}`;
   return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Meta"><div class="alca"></div><h2>${meta ? 'Editar meta' : 'Nova meta'}</h2>${corpo}</div>`;
 }
+
+// ------------------------------------------------------------ relatórios
+const COR_PESSOA = { dem: '#5B8AF0', gio: '#2AAE78', fam: '#C8772E' };
+
+export function telaRelatorios(E) {
+  const A = apoio(E);
+  const db = E.db, mes = E.mes, p = E.perfil, fam = A.fam;
+  const ehFam = fam && p === fam.id;
+  const aba = E.relAba || 'grupo';
+  const nomeM = nomeMesAno(mes).split(' ')[0].toLowerCase();
+  const abas = `<div class="abas" role="tablist" style="max-width:520px;margin-bottom:14px">${[['grupo', 'Por grupo'], ['meses', 'Mês a mês'], ['quem', 'Quem pagou']].map(([id, n]) => `<button role="tab" aria-selected="${aba === id}" data-a="relAba" data-v="${id}">${n}</button>`).join('')}</div>`;
+  let corpo = '';
+
+  if (aba === 'grupo') {
+    // gasto do mês × média dos 3 meses anteriores, por grupo (com detalhe por subcategoria)
+    const doMes = R.gastosPorCategoria(db, p, mes);
+    const ant = [1, 2, 3].map((k) => R.somaMesR(mes, -k)).filter((m) => db.transacoes.some((t) => R.ehGasto(t) && R.confirmado(t) && R.mesCompetencia(db, t) === m));
+    const porAnt = ant.map((m) => R.gastosPorCategoria(db, p, m));
+    const grupoDe = (id) => { const c = R.porId(db.categorias, id); return c ? (c.grupo || c.id) : ''; };
+    const soma = (mapa, filtro) => { let s = 0; mapa.forEach((v, k) => { if (filtro(k)) s += v; }); return s; };
+    const media = (filtro) => (porAnt.length ? porAnt.reduce((s, m) => s + soma(m, filtro), 0) / porAnt.length : 0);
+    const ids = new Set();
+    [doMes, ...porAnt].forEach((m) => m.forEach((v, k) => ids.add(grupoDe(k))));
+    const linhas = [...ids].map((g) => ({ g, mes: arred(soma(doMes, (k) => grupoDe(k) === g)), media: arred(media((k) => grupoDe(k) === g)) }))
+      .filter((x) => Math.abs(x.mes) >= 0.005 || Math.abs(x.media) >= 0.005).sort((a, b) => b.mes - a.mes || b.media - a.media);
+    const total = arred(linhas.reduce((s, x) => s + x.mes, 0)), totalMedia = arred(linhas.reduce((s, x) => s + x.media, 0));
+    const escala = Math.max(1, ...linhas.map((x) => Math.max(x.mes, x.media)));
+    const pctW = (v) => Math.max(0, Math.min(100, (v / escala) * 100)).toFixed(1) + '%';
+    const delta = (a, b) => (b > 0.005 ? Math.round(((a - b) / b) * 100) : null);
+    const barra = (x, nome, sub) => {
+      const d = delta(x.mes, x.media);
+      const aberto = !sub && E.relGrupo === x.g;
+      return `<${sub ? 'div' : `button data-a="relGrupo" data-id="${esc(x.g)}" aria-expanded="${aberto}"`} class="item" style="flex-direction:column;align-items:stretch;gap:6px;${sub ? 'padding-left:30px;background:none' : ''}" title="${esc(nome)}: ${brl(x.mes)} em ${nomeM} · média ${brl(x.media)}">
+        <span style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;text-align:left"><span class="${sub ? '' : 'titulo'}" style="${sub ? 'font-size:14px' : ''}">${sub ? '' : `<span style="display:inline-block;transform:rotate(${aberto ? 90 : 0}deg);color:var(--muted);margin-right:4px">›</span>`}${esc(nome)}</span>
+          <span style="white-space:nowrap;font-variant-numeric:tabular-nums"><strong>${sens(brl(x.mes))}</strong>${d === null ? '' : ` <span class="muted" style="font-size:12px">${d > 0 ? '+' : ''}${d}%</span>`}</span></span>
+        <span style="position:relative;height:${sub ? 8 : 10}px;border-radius:4px;background:var(--surf2)">
+          <span style="position:absolute;left:0;top:0;bottom:0;width:${pctW(x.mes)};border-radius:0 4px 4px 0;background:${sub ? 'var(--soft)' : 'var(--accent)'};${sub ? 'opacity:.7' : ''}"></span>
+          ${x.media > 0.005 ? `<span style="position:absolute;top:-3px;bottom:-3px;left:${pctW(x.media)};width:2px;margin-left:-1px;background:var(--text)"></span>` : ''}
+        </span>
+        <span class="muted" style="font-size:12px;text-align:left">média ${sens(brl(x.media))}</span>
+      </${sub ? 'div' : 'button'}>`;
+    };
+    const subsDe = (g) => {
+      const cats = new Set();
+      [doMes, ...porAnt].forEach((m) => m.forEach((v, k) => { if (grupoDe(k) === g) cats.add(k); }));
+      return [...cats].map((c) => ({ g: c, mes: arred(doMes.get(c) || 0), media: arred(media((k) => k === c)) })).sort((a, b) => b.mes - a.mes);
+    };
+    const nomeDe = (id) => (id ? (R.porId(db.categorias, id) || {}).nome || '?' : 'Sem categoria');
+    corpo = `<div class="cartao" style="margin-bottom:12px"><div class="muted" style="font-size:13px">${ehFam ? 'Gastos da família' : 'Seus gastos (pessoais + sua parte na família)'} em ${esc(nomeM)}, já lançados</div>
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px"><span style="font-size:26px;font-weight:800">${sens(brl(total))}</span><span class="muted" style="font-size:13px">média dos ${porAnt.length || 0} meses anteriores ${sens(brl(totalMedia))}</span></div>
+        <div style="display:flex;gap:16px;margin-top:10px;font-size:12.5px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--accent);margin-right:6px"></span>Este mês</span><span><span style="display:inline-block;width:2px;height:12px;background:var(--text);margin-right:6px;vertical-align:-2px"></span>Média dos meses anteriores</span></div></div>
+      <div class="lista">${linhas.length ? linhas.map((x) => barra(x, nomeDe(x.g)) + (E.relGrupo === x.g ? subsDe(x.g).map((y) => barra(y, nomeDe(y.g), true)).join('') : '')).join('') : `<div class="vazio">Nenhum gasto em ${esc(nomeM)} nem nos meses anteriores.</div>`}</div>
+      <p class="muted" style="font-size:12.5px;margin:8px 4px 0">Toque num grupo para ver as subcategorias. Cartão conta no mês da fatura, como no resto do app.</p>`;
+  }
+
+  if (aba === 'meses') {
+    const n = E.relMeses || 6;
+    const meses = Array.from({ length: n }, (_, i) => R.somaMesR(mes, i - n + 1));
+    const dados = meses.map((m) => { const r = R.resumoDoMes(db, p, m); const pl = R.planejadoDoMes(db, p, m, r.metas); return { m, r, pl }; });
+    const escala = Math.max(1, ...dados.map((d) => Math.max(d.r.gastosPrev, d.r.gastos, d.pl.gastos)));
+    const h = (v) => Math.max(0, (v / escala) * 100).toFixed(2) + '%';
+    const cur = (m) => `${mesCurtoR(m)}${m.slice(2, 4) !== mes.slice(2, 4) || m === meses[0] ? '/' + m.slice(2, 4) : ''}`;
+    const tabela = E.relTabela;
+    const grafico = `<div class="cartao">
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--soft);margin-bottom:12px"><span><span style="display:inline-block;width:12px;height:10px;border-radius:2px;background:var(--accent);margin-right:6px"></span>Lançado</span><span><span style="display:inline-block;width:12px;height:10px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--accent) 0 2px,transparent 2px 5px);outline:1px solid var(--accent);outline-offset:-1px;margin-right:6px"></span>Previsto (fixas + metas)</span><span><span style="display:inline-block;width:14px;height:2px;background:var(--text);margin-right:6px;vertical-align:3px"></span>Planejado</span></div>
+        <div style="display:grid;grid-template-columns:repeat(${n},1fr);gap:${n > 3 ? 8 : 18}px;align-items:end;height:200px;border-bottom:1px solid var(--line)">
+          ${dados.map((d) => `<div title="${nomeMesAno(d.m)}: lançado ${brl(d.r.gastos)} · previsto ${brl(d.r.gastosPrev)} · planejado ${brl(d.pl.gastos)}" style="position:relative;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
+            <span style="position:absolute;left:12%;right:12%;bottom:0;height:${h(d.r.gastosPrev)};border-radius:4px 4px 0 0;background:repeating-linear-gradient(45deg,var(--accent) 0 2px,transparent 2px 6px);opacity:.75"></span>
+            <span style="position:absolute;left:12%;right:12%;bottom:0;height:${h(d.r.gastos)};border-radius:4px 4px 0 0;background:var(--accent);${d.m === mes ? '' : 'opacity:.9'}"></span>
+            ${d.pl.gastos ? `<span style="position:absolute;left:4%;right:4%;bottom:${h(d.pl.gastos)};height:2px;background:var(--text)"></span>` : ''}
+          </div>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(${n},1fr);gap:${n > 3 ? 8 : 18}px;margin-top:6px;text-align:center;font-size:12px">${dados.map((d) => `<span style="${d.m === mes ? 'font-weight:800;color:var(--text)' : 'color:var(--muted)'}">${cur(d.m)}<br><span style="font-variant-numeric:tabular-nums">${sens(brlCurto(d.r.gastosPrev > d.r.gastos ? d.r.gastosPrev : d.r.gastos))}</span></span>`).join('')}</div>
+      </div>`;
+    const tab = `<div class="cartao" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums">
+        <thead><tr class="muted" style="font-size:12px;text-align:right"><th style="text-align:left;padding:6px 4px;font-weight:700">Mês</th><th style="padding:6px 4px;font-weight:700">Entradas</th><th style="padding:6px 4px;font-weight:700">Gastos</th><th style="padding:6px 4px;font-weight:700">Planejado</th><th style="padding:6px 4px;font-weight:700">Sobra</th></tr></thead>
+        <tbody>${dados.map((d) => { const futuro = d.r.gastosPrev > d.r.gastos + 0.005; const g = futuro ? d.r.gastosPrev : d.r.gastos; const ent = futuro ? d.r.entradasPrev : d.r.entradas; const s = arred(ent - g); return `<tr style="border-top:1px solid var(--line);text-align:right"><td style="text-align:left;padding:8px 4px;white-space:nowrap">${esc(nomeMesAno(d.m))}${futuro ? ' <span class="muted" style="font-size:11px">prev.</span>' : ''}</td><td style="padding:8px 4px">${sens(brl(ent))}</td><td style="padding:8px 4px">${sens(brl(g))}</td><td style="padding:8px 4px" class="muted">${d.pl.gastos ? sens(brl(d.pl.gastos)) : '—'}</td><td style="padding:8px 4px;font-weight:700;${s < 0 ? 'color:var(--despesa)' : ''}">${sens(brlSinal(s))}</td></tr>`; }).join('')}</tbody></table>
+        <p class="muted" style="font-size:12px;margin-top:8px">"prev." = inclui contas fixas que ainda faltam lançar e, no mês atual e nos próximos, o que as metas ainda reservam.</p></div>`;
+    corpo = `<div class="chips" style="margin-bottom:12px"><button class="chip" aria-pressed="${n === 3}" data-a="relMeses" data-v="3">3 meses</button><button class="chip" aria-pressed="${n === 6}" data-a="relMeses" data-v="6">6 meses</button><button class="chip" aria-pressed="${!!tabela}" data-a="relTabela" style="margin-left:auto">${tabela ? 'Ver gráfico' : 'Ver tabela'}</button></div>${tabela ? tab : grafico}`;
+  }
+
+  if (aba === 'quem') {
+    const ac = R.acertoDoMes(db, mes);
+    const [p1, p2] = A.ps;
+    const fr = ac.fracoes.fracoes;
+    const linhas = A.ps.map((x) => ({ x, pagou: arred(ac.det.pagoFam[x.id] || 0), parte: arred(ac.det.parteFam[x.id] || 0) }));
+    const escala = Math.max(1, ...linhas.map((l) => Math.max(l.pagou, l.parte)));
+    const w = (v) => Math.max(0, Math.min(100, (v / escala) * 100)).toFixed(1) + '%';
+    const r = ac.resultado;
+    corpo = `<div class="cartao"><div class="muted" style="font-size:13px">Gastos da família em ${esc(nomeM)}: <strong style="color:var(--text)">${sens(brl(ac.det.famTotal))}</strong>, divididos ${A.ps.map((x) => esc(x.nome) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ')}</div>
+      ${linhas.map((l) => { const cor = COR_PESSOA[A.classe(l.x.id)] || 'var(--accent)'; const dif = arred(l.pagou - l.parte); return `<div style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><strong>${esc(l.x.nome)}</strong><span style="font-size:13px;${Math.abs(dif) < 0.01 ? 'color:var(--muted)' : ''}">${Math.abs(dif) < 0.01 ? 'pagou a parte certa' : (dif > 0 ? 'pagou ' + sens(brl(dif)) + ' a mais' : 'pagou ' + sens(brl(-dif)) + ' a menos')}</span></div>
+        <div title="${esc(l.x.nome)} pagou ${brl(l.pagou)}" style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="muted" style="font-size:12px;width:44px">Pagou</span><span style="flex:1;height:12px;border-radius:4px;background:var(--surf2);overflow:hidden"><span style="display:block;height:100%;width:${w(l.pagou)};background:${cor};border-radius:0 4px 4px 0"></span></span><span style="font-size:13px;width:96px;text-align:right;font-variant-numeric:tabular-nums">${sens(brl(l.pagou))}</span></div>
+        <div title="Parte de ${esc(l.x.nome)}: ${brl(l.parte)}" style="display:flex;align-items:center;gap:8px;margin-top:6px"><span class="muted" style="font-size:12px;width:44px">Parte</span><span style="flex:1;height:12px;border-radius:4px;background:var(--surf2);overflow:hidden"><span style="display:block;height:100%;width:${w(l.parte)};background:repeating-linear-gradient(45deg,${cor} 0 2px,transparent 2px 6px);outline:1px solid ${cor};outline-offset:-1px;border-radius:0 4px 4px 0"></span></span><span style="font-size:13px;width:96px;text-align:right;font-variant-numeric:tabular-nums">${sens(brl(l.parte))}</span></div>
+      </div>`; }).join('')}
+      <div style="display:flex;gap:16px;margin-top:14px;font-size:12px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--soft);margin-right:6px"></span>Quanto pagou dos gastos da família</span><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--soft) 0 2px,transparent 2px 5px);outline:1px solid var(--soft);outline-offset:-1px;margin-right:6px"></span>Parte que cabe a cada um</span></div>
+    </div>
+    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:#E8C9A6">Somando tudo (gastos de um pagos pelo outro, transferências, acertos já feitos)</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a>`;
+    if (!p1 || !p2) corpo = '<div class="vazio">Precisa de duas pessoas na aba Pessoas.</div>';
+  }
+  return casca(E, 'Relatórios', abas + corpo, { voltar: 'planejamento', acoes: seletorMes(E) });
+}
+const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const mesCurtoR = (m) => MESES_CURTOS[Number(m.slice(5, 7)) - 1];
+const brlCurto = (v) => (Math.abs(v) >= 1000 ? 'R$ ' + (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : brl(v).replace(',00', ''));

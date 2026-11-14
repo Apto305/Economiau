@@ -38,7 +38,7 @@ function desenhar() {
   else if (E.fase === 'erro') html = T.telaErro(E);
   else if (E.rota === 'perfis' || !E.perfil) html = T.telaPerfis(E);
   else {
-    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias, tags: T.telaTags, planejamento: T2.telaPlanejamento };
+    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias, tags: T.telaTags, planejamento: T2.telaPlanejamento, relatorios: T2.telaRelatorios };
     html = (telas[E.rota] || T.telaInicio)(E) + T.modal(E);
   }
   raiz.innerHTML = html + T.toast(E);
@@ -590,6 +590,10 @@ const A = {
     E.modal = { tipo: 'mov', form: { foraAcerto: false, investimento: i.id, tipo: d.v, valor: '', data: hojeISO(), conta: primeiraConta(ehFamilia(i.titular) ? eu() : i.titular) } };
     desenhar();
   },
+  relAba(d) { E.relAba = d.v; desenhar(); },
+  relGrupo(d) { E.relGrupo = E.relGrupo === d.id ? null : d.id; desenhar(); },
+  relMeses(d) { E.relMeses = Number(d.v); desenhar(); },
+  relTabela() { E.relTabela = !E.relTabela; desenhar(); },
   // ---------------------------------------------------------------- metas
   novaMeta() {
     const f = fam();

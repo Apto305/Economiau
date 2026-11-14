@@ -196,7 +196,7 @@ export function telaPerfis(E) {
 
 // ------------------------------------------------------------- casca
 const MENU = [
-  ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes'], ['planejamento', 'Planejamento', 'planejar']]],
+  ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes'], ['planejamento', 'Planejamento', 'planejar'], ['relatorios', 'Relatórios', 'grafico']]],
   ['Fechamento do mês', [['conferencia', 'Conferência', 'ok'], ['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
   ['Patrimônio', [['investimentos', 'Investimentos', 'investir']]],
   ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['tags', 'Tags', 'etiqueta'], ['rendas', 'Rendas e divisão', 'rendas']]],
@@ -217,7 +217,7 @@ export function casca(E, titulo, corpo, opcoes = {}) {
     <a href="#/inicio" ${rota === 'inicio' ? 'aria-current="page"' : ''}>${ic('inicio', 22)}Início</a>
     <a href="#/transacoes" ${rota === 'transacoes' ? 'aria-current="page"' : ''}>${ic('transacoes', 22)}Transações</a>
     <button class="mais-btn" data-a="menuLancar" aria-label="Novo lançamento">${ic('mais_', 26)}</button>
-    <a href="#/planejamento" ${rota === 'planejamento' ? 'aria-current="page"' : ''}>${ic('planejar', 22)}Planejar</a>
+    <a href="#/planejamento" ${rota === 'planejamento' || rota === 'relatorios' ? 'aria-current="page"' : ''}>${ic('planejar', 22)}Planejar</a>
     <a href="#/mais" ${['mais', 'acerto', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias', 'tags'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
   </nav>`;
   const voltar = opcoes.voltar ? `<a class="icone-btn so-cel" href="#/${opcoes.voltar}" aria-label="Voltar">${ic('voltar', 22)}</a>` : '';
@@ -518,6 +518,8 @@ export function telaMais(E) {
   const corpo = `<div class="lista">
       <button class="item" data-a="ir" data-v="perfis">${A.avatar(E.perfil, 36)}<span class="principal-txt"><span class="titulo">${esc(A.nome(E.perfil))}</span><span class="sub">Trocar perfil</span></span>${ic('trocar', 18)}</button>
     </div>
+    <div class="secao-titulo"><span>Planejamento</span></div>
+    <div class="lista">${link('planejamento', 'planejar', 'Planejamento', 'Metas, previsto e planejado do mês')}${link('relatorios', 'grafico', 'Relatórios', 'Por grupo, mês a mês e quem pagou')}</div>
     <div class="secao-titulo"><span>Fechamento do mês</span></div>
     <div class="lista">${link('conferencia', 'ok', 'Conferência', 'Faturas e saldos × banco')}${link('faturas', 'faturas', 'Faturas', 'Compras por fatura, pagar e alterar fechamento')}${link('acerto', 'acerto', 'Acerto', 'Quem deve quanto no mês')}</div>
     <div class="secao-titulo"><span>Patrimônio</span></div>

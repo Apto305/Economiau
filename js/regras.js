@@ -1,7 +1,7 @@
 // Regras de negócio do Economiau: faturas, mês de competência, divisão
 // pela renda, saldos das contas e acerto do mês. Não mexe na tela nem na
 // planilha: recebe os dados já lidos (db) e devolve números.
-import { arred, mesDe, somaMes, dataNoMes } from './util.js';
+import { arred, mesDe, somaMes, dataNoMes, hojeISO } from './util.js';
 
 export const TIPO = {
   despesa: 'Despesa', estorno: 'Estorno/Crédito', fatura: 'Pagamento de fatura',
@@ -809,7 +809,8 @@ export function resumoDoMes(db, perfilId, mes) {
   const gastos = arred(gastosDoPerfil(db, perfilId, mes) + inv.aportes);
   const comPrev = arred(gastosDoPerfil(dbp, perfilId, mes, true) + inv.aportes);
   const sit = situacaoMetas(db, mes);
-  const reserva = reservaDasMetas(db, perfilId, mes, sit);
+  // mês que já passou: as metas não reservam mais nada (o mês fechou com o que foi lançado)
+  const reserva = mes < mesDe(hojeISO()) ? 0 : reservaDasMetas(db, perfilId, mes, sit);
   const gastosPrev = arred(comPrev + reserva);
   return { inv, entradas, entPrev, entradasPrev: arred(entradas + entPrev), gastos, previstos: arred(comPrev - gastos), reserva, gastosPrev, sobraReal: arred(entradas - gastos), sobraPrev: arred(entradas + entPrev - gastosPrev), metas: sit };
 }
@@ -834,3 +835,22 @@ export function planejadoDoMes(db, perfilId, mes, sit) {
   renda = arred(renda); metas = arred(metas); fixas = arred(fixas);
   return { renda, metas, fixas, gastos: arred(metas + fixas), sobra: arred(renda - metas - fixas) };
 }
+
+// --------------------------------------------------------------- relatórios
+// Gasto do perfil por categoria no mês (só lançados): pessoa = gastos dela +
+// parte dela nos da Família; Família = gastos da Família
+export function gastosPorCategoria(db, perfilId, mes) {
+  const fam = familia(db);
+  const out = new Map();
+  db.transacoes.forEach((t) => {
+    if (!ehGasto(t) || !confirmado(t) || mesCompetencia(db, t) !== mes) return;
+    let v;
+    if (fam && perfilId === fam.id) { if (t.dono !== fam.id) return; v = t.tipo === TIPO.estorno ? -t.valor : t.valor; }
+    else v = parteDe(db, t, perfilId);
+    if (!v) return;
+    const k = t.categoria || '';
+    out.set(k, (out.get(k) || 0) + v);
+  });
+  return out;
+}
+export const somaMesR = (mes, n) => somaMes(mes, n);
