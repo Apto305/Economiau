@@ -527,17 +527,16 @@ export function telaPlanejamento(E) {
 
   // metas do perfil: perfil Família vê as da Família; a pessoa vê as dela e as da Família
   const lista = res.metas.filter((x) => R.pesoNoPerfil(db, x.dono, p, mes) > 0)
-    .sort((x, y) => (x.dono === p ? 0 : 1) - (y.dono === p ? 0 : 1) || nomeCat(db, x.meta.categoria).localeCompare(nomeCat(db, y.meta.categoria)));
+    .sort((x, y) => (x.dono === p ? 0 : 1) - (y.dono === p ? 0 : 1) || x.nome.localeCompare(y.nome));
   const ordem = [];
-  lista.filter((x) => x.grupo || !lista.some((g) => g.grupo && g.dono === x.dono && g.meta.categoria === (R.porId(db.categorias, x.meta.categoria) || {}).grupo)).forEach((x) => {
-    ordem.push([x, false]);
-    if (x.grupo) lista.filter((y) => !y.grupo && y.dono === x.dono && (R.porId(db.categorias, y.meta.categoria) || {}).grupo === x.meta.categoria).forEach((y) => ordem.push([y, true]));
-  });
-  const itemMeta = ([x, sub]) => {
+  const poe = (x, nivel) => { ordem.push([x, nivel]); lista.filter((y) => y.mae === x).forEach((y) => poe(y, nivel + 1)); };
+  lista.filter((x) => !x.mae || !lista.includes(x.mae)).forEach((x) => poe(x, 0));
+  const itemMeta = ([x, nivel]) => {
+    const sub = nivel > 0;
     const passou = arred(x.usado - x.valor);
     const peso = R.pesoNoPerfil(db, x.dono, p, mes);
-    return `<button class="item" data-a="editarMeta" data-id="${x.meta.id}" style="flex-direction:column;align-items:stretch;gap:8px;${sub ? 'padding-left:28px' : ''}">
-      <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;text-align:left"><span class="titulo" style="flex:1;min-width:120px">${sub ? '↳ ' : ''}${esc(nomeCat(db, x.meta.categoria))}${x.grupo ? ' <span class="muted" style="font-weight:600;font-size:12px">grupo</span>' : ''}</span>
+    return `<button class="item" data-a="editarMeta" data-id="${x.meta.id}" style="flex-direction:column;align-items:stretch;gap:8px;${sub ? 'padding-left:' + (14 + 14 * nivel) + 'px' : ''}">
+      <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;text-align:left"><span class="titulo" style="flex:1;min-width:120px">${sub ? '↳ ' : ''}${esc(x.nome)}${x.grupo ? ' <span class="muted" style="font-weight:600;font-size:12px">grupo</span>' : x.varias && x.meta.nome ? ` <span class="muted" style="font-weight:600;font-size:12px">${esc(x.cats.map((c) => nomeCat(db, c)).join(' + '))}</span>` : ''}</span>
         ${!ehFam ? `<span class="pill ${A.classe(x.dono)}">${esc(A.nome(x.dono))}</span>` : ''}${x.meta.mes !== 'Todo mês' ? '<span class="pill neutra">só este mês</span>' : ''}</span>
       <span style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--surf2)"><span style="width:${Math.min(100, x.pctReal * 100).toFixed(1)}%;background:${corPct(x.pct)}"></span><span style="width:${Math.max(0, Math.min(100, x.pct * 100) - Math.min(100, x.pctReal * 100)).toFixed(1)}%;background:repeating-linear-gradient(45deg,${corPct(x.pct)} 0 3px,transparent 3px 6px)"></span></span>
       <span style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span class="muted" style="font-size:12.5px;text-align:left">${x.previsto ? sens(brl(x.real)) + ' lançados + ' + sens(brl(x.previsto)) + ' previstos · ' : ''}${passou > 0.005 ? `<strong style="color:var(--despesa)">passou ${sens(brl(passou))}</strong>` : `faltam ${sens(brl(arred(x.valor - x.usado)))}`}${peso < 1 && peso > 0 ? ' · sua parte ' + Math.round(peso * 100) + '%' : ''}</span>
@@ -546,7 +545,7 @@ export function telaPlanejamento(E) {
   };
   const metas = `<div class="secao-titulo"><span>Metas de ${esc(nomeM)}</span><button class="link" data-a="novaMeta">${ic('mais_', 15, 'style="vertical-align:-2px"')} Nova meta</button></div>
     <div class="lista">${ordem.length ? ordem.map(itemMeta).join('') : `<div class="vazio">Nenhuma meta em ${esc(nomeM)}. <button class="link" data-a="novaMeta">Criar meta</button></div>`}</div>
-    <p class="muted" style="font-size:12.5px;margin:8px 4px 0">A meta entra nos gastos previstos pelo que ainda falta. Cada lançamento ou conta fixa prevista na categoria toma o lugar dela, sem contar duas vezes. Meta de subcategoria fica dentro da meta do grupo.</p>`;
+    <p class="muted" style="font-size:12.5px;margin:8px 4px 0">A meta entra nos gastos previstos pelo que ainda falta. Cada lançamento ou conta fixa prevista na categoria toma o lugar dela, sem contar duas vezes. Metas que dividem categorias (ex.: Mercado dentro de Alimentação) não contam duas vezes.</p>`;
 
   // contas fixas do mês
   const prev = R.previstosDoMes(db, mes).filter((x) => !x.ehRenda && x.tipo !== R.TIPO.receita && R.pesoNoPerfil(db, x.dono, p, mes) > 0);
@@ -565,27 +564,45 @@ export function modalMeta(E, A, m) {
   const fam = A.fam;
   const donos = [...(fam ? [fam] : []), ...A.ps];
   const meta = m.editando ? R.porId(db.metas || [], m.editando) : null;
+  const multi = !E.banco || E.banco.demo || E.banco.temCampo('metas', 'categorias');
+  const sel = f.cats || [];
   const despesas = R.porOrdem(db, db.categorias.filter((c) => c.tipo !== 'Receita' && R.ativo(c)));
   const grupos = despesas.filter((c) => !c.grupo);
-  const opcoes = grupos.map((g) => `<optgroup label="${esc(g.nome)}"><option value="${g.id}" ${f.categoria === g.id ? 'selected' : ''}>${esc(g.nome)} — grupo inteiro</option>${despesas.filter((c) => c.grupo === g.id).map((c) => `<option value="${c.id}" ${f.categoria === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</optgroup>`).join('');
+  const abertos = f.abertos || [];
+  const chk = (on, fraco) => `<span class="check ${on ? 'on' : ''}" ${fraco ? 'style="opacity:.55"' : ''}>${on ? ic('ok', 13, 'stroke-width="3.2"') : ''}</span>`;
+  const linhas = grupos.map((g) => {
+    const subs = despesas.filter((c) => c.grupo === g.id);
+    const gSel = sel.includes(g.id);
+    const algumaSub = subs.some((c) => sel.includes(c.id));
+    const aberto = abertos.includes(g.id) || (algumaSub && !abertos.includes('-' + g.id));
+    return `<div style="display:flex;align-items:center;border-top:1px solid var(--line)">
+        <button class="opcao" style="flex:1;border:0;border-radius:0;background:none;margin-top:0" data-a="metaCat" data-id="${g.id}" aria-checked="${gSel}">${chk(gSel)}<span style="flex:1;text-align:left"><span style="display:block;font-weight:700">${esc(g.nome)}</span>${subs.length ? `<span class="muted" style="font-size:12px">${gSel ? 'grupo inteiro' : algumaSub ? subs.filter((c) => sel.includes(c.id)).map((c) => esc(c.nome)).join(', ') : subs.length + ' subcategorias'}</span>` : ''}</span></button>
+        ${subs.length ? `<button class="icone-btn" data-a="metaAbrirGrupo" data-id="${g.id}" aria-label="${aberto ? 'Esconder' : 'Ver'} subcategorias de ${esc(g.nome)}" style="transform:rotate(${aberto ? 90 : 0}deg)">${ic('seta', 18)}</button>` : ''}
+      </div>
+      ${aberto ? subs.map((c) => `<button class="opcao" style="width:100%;border:0;border-radius:0;background:none;margin-top:0;padding-left:40px" data-a="metaCat" data-id="${c.id}" aria-checked="${gSel || sel.includes(c.id)}" ${gSel ? 'disabled' : ''}>${chk(gSel || sel.includes(c.id), gSel)}<span style="flex:1;text-align:left;font-size:14.5px">${esc(c.nome)}</span></button>`).join('') : ''}`;
+  }).join('');
+  const nomesSel = sel.map((id) => { const c = R.porId(db.categorias, id); return c ? c.nome + (R.ehGrupo(db, id) ? ' (grupo)' : '') : ''; }).filter(Boolean);
   let info = '';
-  if (f.categoria && f.dono) {
-    const media = R.mediaGasto(db, f.categoria, f.dono, mes);
-    const u = R.usoCategorias(db, R.escopoMeta(db, f.categoria), f.dono, mes);
+  if (sel.length && f.dono) {
+    const media = R.mediaGasto(db, sel, f.dono, mes);
+    const u = R.usoCategorias(db, R.escopoMeta(db, sel), f.dono, mes);
     info = `<div class="cartao" style="margin-top:12px;background:var(--bg);font-size:13.5px">
       <div style="display:flex;justify-content:space-between;gap:8px"><span class="muted">Média dos 3 meses anteriores</span><span><strong>${brl(media)}</strong>${media > 0 ? ` <button class="link" data-a="metaUsarMedia" data-v="${media}">usar</button>` : ''}</span></div>
       <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px"><span class="muted">Em ${esc(nomeM)} até agora</span><strong>${brl(u.real)}${u.previsto ? ' + ' + brl(u.previsto) + ' previstos' : ''}</strong></div></div>`;
   }
-  const fixo = !!meta; // editando: categoria e dono ficam como estão
   const corpo = `
-    <div class="campo"><span>De quem é</span>${fixo ? `<div><span class="pill ${A.classe(f.dono)}">${esc(A.nome(f.dono))}</span></div>` : `<div class="donos" role="radiogroup">${donos.map((p) => `<button role="radio" class="${A.classe(p.id)}" aria-checked="${f.dono === p.id}" data-a="metaDono" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>`}
+    <div class="campo"><span>De quem é</span>${meta ? `<div><span class="pill ${A.classe(f.dono)}">${esc(A.nome(f.dono))}</span></div>` : `<div class="donos" role="radiogroup">${donos.map((p) => `<button role="radio" class="${A.classe(p.id)}" aria-checked="${f.dono === p.id}" data-a="metaDono" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>`}
       <span class="muted" style="font-size:12px;margin-top:4px">${f.dono && fam && f.dono === fam.id ? 'Gastos da casa, pagos por qualquer um.' : 'Só os gastos pessoais desta pessoa.'}</span></div>
-    <label class="campo"><span>Categoria</span>${fixo ? `<strong>${esc(nomeCat(db, f.categoria))}${R.ehGrupo(db, f.categoria) ? ' (grupo inteiro)' : ''}</strong>` : `<select class="entrada" data-campo="categoria"><option value="">Escolha…</option>${opcoes}</select>`}</label>
+    <div class="campo"><span>${multi ? 'Categorias — toque no grupo para ele inteiro, ou abra para escolher subcategorias. Dá para juntar várias.' : 'Categoria — toque no grupo para ele inteiro, ou abra para escolher uma subcategoria.'}</span>
+      <div style="border:1px solid var(--line);border-radius:14px;overflow:hidden;max-height:340px;overflow-y:auto" class="rolar">${linhas}</div>
+      ${!multi ? '<span class="muted" style="font-size:12px;margin-top:6px">Para juntar várias categorias numa meta, atualize a planilha para a versão 1.17 (rode o script de montagem).</span>' : ''}
+      ${nomesSel.length ? `<span style="font-size:13px;margin-top:6px"><span class="muted">Escolhidas:</span> <strong>${esc(nomesSel.join(' + '))}</strong></span>` : ''}</div>
+    ${multi && sel.length > 1 ? `<label class="campo"><span>Nome da meta (opcional)</span><input class="entrada" data-campo="nome" value="${esc(f.nome || '')}" placeholder="${esc(nomesSel.map((n) => n.replace(' (grupo)', '')).join(' + '))}"></label>` : ''}
     <label class="campo"><span>Limite no mês (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
     ${info}
-    ${fixo ? `<p class="muted" style="font-size:12.5px;margin-top:12px">${meta.mes === 'Todo mês' ? 'Vale todo mês' + (meta.desde ? ' desde ' + nomeMesAno(meta.desde).toLowerCase() : '') + '. Ao salvar, você escolhe se a mudança vale só para ' + esc(nomeM) + ' ou daqui em diante.' : 'Vale só em ' + esc(nomeM) + '.'}</p>`
+    ${meta ? `<p class="muted" style="font-size:12.5px;margin-top:12px">${meta.mes === 'Todo mês' ? 'Vale todo mês' + (meta.desde ? ' desde ' + nomeMesAno(meta.desde).toLowerCase() : '') + '. Ao salvar, você escolhe se a mudança vale só para ' + esc(nomeM) + ' ou daqui em diante.' : 'Vale só em ' + esc(nomeM) + '.'}</p>`
     : `<div class="campo"><span>Vale</span><div class="chips"><button class="chip" aria-pressed="${f.vale !== 'mes'}" data-a="metaVale" data-v="todo">Todo mês, a partir de ${esc(nomeM)}</button><button class="chip" aria-pressed="${f.vale === 'mes'}" data-a="metaVale" data-v="mes">Só em ${esc(nomeM)}</button></div></div>`}
-    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMeta" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : fixo ? 'Salvar alteração' : 'Criar meta'}</button>
-    ${fixo ? `<button class="btn btn-perigo btn-largo" style="margin-top:8px" data-a="excluirMeta">${ic('lixo', 18)}Excluir meta</button>` : ''}`;
-  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Meta"><div class="alca"></div><h2>${fixo ? 'Editar meta' : 'Nova meta'}</h2>${corpo}</div>`;
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMeta" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : meta ? 'Salvar alteração' : 'Criar meta'}</button>
+    ${meta ? `<button class="btn btn-perigo btn-largo" style="margin-top:8px" data-a="excluirMeta">${ic('lixo', 18)}Excluir meta</button>` : ''}`;
+  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Meta"><div class="alca"></div><h2>${meta ? 'Editar meta' : 'Nova meta'}</h2>${corpo}</div>`;
 }

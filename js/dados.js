@@ -71,6 +71,7 @@ const ABAS = {
     aba: 'Metas', prefixo: 'MET', campos: {
       id: ['ID'], mes: ['Mês', 'mt'], categoria: ['Categoria (ID)'], dono: ['Dono (ID)'], valor: ['Valor alvo', 'n'],
       status: ['Status'], criadoEm: ['Criado em', 'dh'], desde: ['A partir de', 'm'], ate: ['Até', 'm'], avisar: ['Avisar em 80%'],
+      nome: ['Nome'], categorias: ['Categorias (IDs)'],
     },
   },
   // aba opcional (planilha 1.15): saldo do banco e conferência de cada conta por mês

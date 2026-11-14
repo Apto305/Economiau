@@ -593,68 +593,97 @@ const A = {
   // ---------------------------------------------------------------- metas
   novaMeta() {
     const f = fam();
-    E.modal = { tipo: 'meta', form: { dono: E.perfil || (f && f.id), categoria: '', valor: '', vale: 'todo' } }; E.modalPai = null;
+    E.modal = { tipo: 'meta', form: { dono: E.perfil || (f && f.id), cats: [], nome: '', valor: '', vale: 'todo', abertos: [] } }; E.modalPai = null;
     desenhar();
   },
   editarMeta(d) {
     const m = R.porId(E.db.metas || [], d.id);
     if (!m) return;
-    E.modal = { tipo: 'meta', editando: m.id, form: { dono: R.donoMeta(E.db, m), categoria: m.categoria, valor: valorTxt(m.valor), vale: m.mes === 'Todo mês' ? 'todo' : 'mes' } }; E.modalPai = null;
+    E.modal = { tipo: 'meta', editando: m.id, form: { dono: R.donoMeta(E.db, m), cats: R.catsDaMeta(m), nome: m.nome || '', valor: valorTxt(m.valor), vale: m.mes === 'Todo mês' ? 'todo' : 'mes', abertos: [] } }; E.modalPai = null;
     desenhar();
   },
   metaDono(d) { E.modal.form.dono = d.id; desenhar(); },
   metaVale(d) { E.modal.form.vale = d.v; desenhar(); },
   metaUsarMedia(d) { E.modal.form.valor = valorTxt(Number(d.v)); desenhar(); },
+  metaCat(d) {
+    const f = E.modal.form;
+    const multi = E.banco.demo || E.banco.temCampo('metas', 'categorias');
+    const c = R.porId(E.db.categorias, d.id);
+    if (!c) return;
+    if (!multi) f.cats = f.cats[0] === d.id ? [] : [d.id];
+    else if (f.cats.includes(d.id)) f.cats = f.cats.filter((x) => x !== d.id);
+    else if (R.ehGrupo(E.db, d.id)) f.cats = [...f.cats.filter((x) => (R.porId(E.db.categorias, x) || {}).grupo !== d.id), d.id]; // o grupo inteiro inclui as subcategorias
+    else f.cats = [...f.cats, d.id];
+    desenhar();
+  },
+  metaAbrirGrupo(d) {
+    const f = E.modal.form;
+    const subs = E.db.categorias.filter((c) => c.grupo === d.id);
+    const auto = subs.some((c) => f.cats.includes(c.id)) && !f.abertos.includes('-' + d.id);
+    const aberto = f.abertos.includes(d.id) || auto;
+    f.abertos = f.abertos.filter((x) => x !== d.id && x !== '-' + d.id);
+    if (!aberto) f.abertos.push(d.id); else if (auto) f.abertos.push('-' + d.id);
+    desenhar();
+  },
   async salvarMeta() {
     const m = E.modal, f = m.form;
     const valor = arred(lerValor(f.valor));
-    if (!f.categoria) return avisar('Escolha a categoria.', true);
+    const cats = (f.cats || []).filter((id) => R.porId(E.db.categorias, id));
+    if (!cats.length) return avisar('Escolha pelo menos uma categoria.', true);
     if (!(valor > 0)) return avisar('Digite o limite da meta.', true);
     const mes = E.mes;
+    const campos = { categoria: cats[0], ...camposMeta({ categorias: cats.length > 1 ? cats.join(', ') : '', nome: cats.length > 1 ? (f.nome || '').trim() : '' }) };
+    const nova = { ...campos, dono: f.dono };
     if (!m.editando) {
-      const ja = R.metasDoMes(E.db, mes).find((x) => R.donoMeta(E.db, x) === f.dono && x.categoria === f.categoria);
-      if (ja) return avisar('Já existe uma meta para essa categoria em ' + nomeMesAno(mes).toLowerCase() + '. Toque nela para alterar.', true);
-      const nova = { mes: f.vale === 'mes' ? mes : 'Todo mês', categoria: f.categoria, dono: f.dono, valor, status: 'Ativo', ...camposMeta(f.vale === 'mes' ? {} : { desde: mes, avisar: 'Sim' }) };
-      const ok = await salvar(() => E.banco.inserir('metas', [nova]));
+      const ja = R.metasDoMes(E.db, mes).find((x) => R.mesmaMeta(E.db, x, nova));
+      if (ja) return avisar('Já existe uma meta com essas categorias em ' + nomeMesAno(mes).toLowerCase() + '. Toque nela para alterar.', true);
+      const linha = { mes: f.vale === 'mes' ? mes : 'Todo mês', ...nova, valor, status: 'Ativo', ...camposMeta(f.vale === 'mes' ? {} : { desde: mes, avisar: 'Sim' }) };
+      const ok = await salvar(() => E.banco.inserir('metas', [linha]));
       if (ok) { E.modal = null; avisar('Meta criada.'); }
       return;
     }
     const meta = R.porId(E.db.metas, m.editando);
+    const mudouCats = !R.mesmaMeta(E.db, meta, { ...meta, ...campos });
+    if (mudouCats && R.metasDoMes(E.db, mes).some((x) => x.id !== meta.id && R.mesmaMeta(E.db, x, nova))) return avisar('Já existe outra meta com essas categorias. Altere aquela.', true);
     if (meta.mes !== 'Todo mês') {
-      const ok = await salvar(() => E.banco.atualizar('metas', [{ id: meta.id, valor }]));
+      const ok = await salvar(() => E.banco.atualizar('metas', [{ id: meta.id, valor, ...campos }]));
       if (ok) { E.modal = null; avisar('Meta alterada.'); }
       return;
     }
-    // meta de todo mês: só este mês ou daqui em diante
+    // meta de todo mês: só este mês ou daqui em diante (trocar as categorias vale daqui em diante)
     E.modalPai = E.modal;
-    E.modal = { tipo: 'confirmar', titulo: 'Alterar a meta', alvo: { id: meta.id, valor }, texto: `De ${brl(meta.valor)} para <strong>${brl(valor)}</strong>. Vale para quais meses?`, opcoes: [['metaSoEsteMes', 'Só ' + nomeMesAno(mes).toLowerCase()], ['metaDaquiEmDiante', 'De ' + nomeMesAno(mes).toLowerCase() + ' em diante']] };
+    const opcoes = mudouCats ? [] : [['metaSoEsteMes', 'Só ' + nomeMesAno(mes).toLowerCase()]];
+    opcoes.push(['metaDaquiEmDiante', 'De ' + nomeMesAno(mes).toLowerCase() + ' em diante']);
+    E.modal = { tipo: 'confirmar', titulo: 'Alterar a meta', alvo: { id: meta.id, valor, campos }, texto: mudouCats ? `As categorias mudaram. A meta nova vale de ${nomeMesAno(mes).toLowerCase()} em diante; os meses anteriores continuam como estavam.` : `De ${brl(meta.valor)} para <strong>${brl(valor)}</strong>. Vale para quais meses?`, opcoes };
     desenhar();
   },
   async metaSoEsteMes() {
     const { id, valor, excluir } = E.modal.alvo;
     const meta = R.porId(E.db.metas, id);
     const mes = E.mes;
-    const ja = (E.db.metas || []).find((x) => x.mes === mes && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria);
+    const ja = (E.db.metas || []).find((x) => x.mes === mes && R.mesmaMeta(E.db, x, meta));
+    const base = { categoria: meta.categoria, ...camposMeta({ categorias: meta.categorias || '', nome: meta.nome || '' }), dono: meta.dono };
     const ok = await salvar(async () => {
       if (ja) await E.banco.atualizar('metas', [{ id: ja.id, valor: excluir ? ja.valor : valor, status: excluir ? 'Arquivado' : 'Ativo' }]);
-      else await E.banco.inserir('metas', [{ mes, categoria: meta.categoria, dono: meta.dono, valor: excluir ? meta.valor : valor, status: excluir ? 'Arquivado' : 'Ativo' }]);
+      else await E.banco.inserir('metas', [{ mes, ...base, valor: excluir ? meta.valor : valor, status: excluir ? 'Arquivado' : 'Ativo' }]);
     });
     if (ok) { E.modal = null; E.modalPai = null; avisar(excluir ? 'Meta tirada de ' + nomeMesAno(mes).toLowerCase() + '.' : 'Meta alterada só em ' + nomeMesAno(mes).toLowerCase() + '.'); }
   },
   async metaDaquiEmDiante() {
-    const { id, valor, excluir } = E.modal.alvo;
+    const { id, valor, excluir, campos } = E.modal.alvo;
     const meta = R.porId(E.db.metas, id);
     const mes = E.mes;
     const antes = somaMes(mes, -1);
     const comecaAqui = meta.desde && meta.desde >= mes;
+    const novos = campos || {};
     // ajustes "só este mês" de meses seguintes deixam de valer quando a meta é excluída
-    const depois = excluir ? (E.db.metas || []).filter((x) => x.mes !== 'Todo mês' && x.mes >= mes && R.ativo(x) && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria) : [];
+    const depois = excluir ? (E.db.metas || []).filter((x) => x.mes !== 'Todo mês' && x.mes >= mes && R.ativo(x) && R.mesmaMeta(E.db, x, meta)) : [];
     const ok = await salvar(async () => {
       if (excluir) await E.banco.atualizar('metas', [comecaAqui ? { id: meta.id, status: 'Arquivado' } : { id: meta.id, ...camposMeta({ ate: antes }) }, ...depois.map((x) => ({ id: x.id, status: 'Arquivado' }))]);
-      else if (comecaAqui) await E.banco.atualizar('metas', [{ id: meta.id, valor }, ...ajusteDoMes(meta, mes, valor)]);
+      else if (comecaAqui) await E.banco.atualizar('metas', [{ id: meta.id, valor, ...novos }, ...ajusteDoMes(meta, mes, valor, novos)]);
       else {
-        await E.banco.atualizar('metas', [{ id: meta.id, ...camposMeta({ ate: antes }) }, ...ajusteDoMes(meta, mes, valor)]);
-        await E.banco.inserir('metas', [{ mes: 'Todo mês', categoria: meta.categoria, dono: meta.dono, valor, status: 'Ativo', ...camposMeta({ desde: mes, ate: meta.ate || '', avisar: meta.avisar || 'Sim' }) }]);
+        await E.banco.atualizar('metas', [{ id: meta.id, ...camposMeta({ ate: antes }) }, ...ajusteDoMes(meta, mes, valor, novos)]);
+        await E.banco.inserir('metas', [{ mes: 'Todo mês', categoria: meta.categoria, ...camposMeta({ categorias: meta.categorias || '', nome: meta.nome || '' }), ...novos, dono: meta.dono, valor, status: 'Ativo', ...camposMeta({ desde: mes, ate: meta.ate || '', avisar: meta.avisar || 'Sim' }) }]);
       }
     });
     if (ok) { E.modal = null; E.modalPai = null; avisar(excluir ? 'Meta encerrada a partir de ' + nomeMesAno(mes).toLowerCase() + '.' : 'Meta alterada daqui em diante.'); }
@@ -662,11 +691,12 @@ const A = {
   excluirMeta() {
     const meta = R.porId(E.db.metas, E.modal.editando);
     const mes = E.mes;
+    const nome = esc(R.nomeMeta(E.db, meta));
     E.modalPai = E.modal;
     if (meta.mes !== 'Todo mês') {
-      E.modal = { tipo: 'confirmar', titulo: 'Excluir meta?', alvo: { id: meta.id }, texto: `A meta de ${esc(nomeCatMeta(meta))} em ${nomeMesAno(mes).toLowerCase()} sai do planejamento.`, opcoes: [['confirmarExcluirMeta', 'Excluir', true]] };
+      E.modal = { tipo: 'confirmar', titulo: 'Excluir meta?', alvo: { id: meta.id }, texto: `A meta de ${nome} em ${nomeMesAno(mes).toLowerCase()} sai do planejamento.`, opcoes: [['confirmarExcluirMeta', 'Excluir', true]] };
     } else {
-      E.modal = { tipo: 'confirmar', titulo: 'Excluir meta?', alvo: { id: meta.id, excluir: true }, texto: `A meta de ${esc(nomeCatMeta(meta))} vale todo mês. Tirar de quais meses?`, opcoes: [['metaSoEsteMes', 'Só de ' + nomeMesAno(mes).toLowerCase(), true], ['metaDaquiEmDiante', 'De ' + nomeMesAno(mes).toLowerCase() + ' em diante', true]] };
+      E.modal = { tipo: 'confirmar', titulo: 'Excluir meta?', alvo: { id: meta.id, excluir: true }, texto: `A meta de ${nome} vale todo mês. Tirar de quais meses?`, opcoes: [['metaSoEsteMes', 'Só de ' + nomeMesAno(mes).toLowerCase(), true], ['metaDaquiEmDiante', 'De ' + nomeMesAno(mes).toLowerCase() + ' em diante', true]] };
     }
     desenhar();
   },
@@ -674,7 +704,7 @@ const A = {
     const { id } = E.modal.alvo;
     const meta = R.porId(E.db.metas, id);
     // ajuste de um mês de uma meta "todo mês": fica arquivado (sem meta naquele mês)
-    const temBase = (E.db.metas || []).some((x) => x.mes === 'Todo mês' && R.ativo(x) && (!x.desde || x.desde <= meta.mes) && (!x.ate || meta.mes <= x.ate) && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria);
+    const temBase = (E.db.metas || []).some((x) => x.mes === 'Todo mês' && R.ativo(x) && (!x.desde || x.desde <= meta.mes) && (!x.ate || meta.mes <= x.ate) && R.mesmaMeta(E.db, x, meta));
     const ok = await salvar(() => (temBase ? E.banco.atualizar('metas', [{ id, status: 'Arquivado' }]) : E.banco.excluir('metas', [id])));
     if (ok) { E.modal = null; E.modalPai = null; avisar('Meta excluída.'); }
   },
@@ -1017,8 +1047,7 @@ function camposMeta(o) {
   return out;
 }
 // ajuste "só este mês" já feito no mês: acompanha a mudança daqui em diante
-const ajusteDoMes = (meta, mes, valor) => (E.db.metas || []).filter((x) => x.mes === mes && R.ativo(x) && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria).map((x) => ({ id: x.id, valor }));
-const nomeCatMeta = (m) => { const c = R.porId(E.db.categorias, m.categoria); return c ? c.nome : 'categoria'; };
+const ajusteDoMes = (meta, mes, valor, novos = {}) => (E.db.metas || []).filter((x) => x.mes === mes && R.ativo(x) && R.mesmaMeta(E.db, x, meta)).map((x) => ({ id: x.id, valor, ...novos }));
 
 function formEditarMov(mv, voltarInv) {
   const liq = mv.tipo === 'Resgate' && Number(mv.liquido) > 0 ? Number(mv.liquido) : Number(mv.valor);
