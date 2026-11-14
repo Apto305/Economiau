@@ -106,14 +106,14 @@ export function telaConferencia(E) {
       const c = A.cartao(f.cartao);
       const st = estadoFatura(db, f);
       const pill = f.conferida ? '<span class="pill ok">Conferida</span>' : st.banco !== null ? '<span class="pill aviso">Conferindo</span>' : '<span class="pill neutra">A conferir</span>';
-      return `<button class="item" data-a="abrirConfFatura" data-id="${f.id}" ${fSel && fSel.id === f.id ? 'style="background:#232832"' : ''}><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0])}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">vence ${dataCurta(f.vencimento)} · ${st.marcadas} de ${st.compras.length} compras · ${sens(brl(st.total))}</span></span>${pill}</button>`;
+      return `<button class="item" data-a="abrirConfFatura" data-id="${f.id}" ${fSel && fSel.id === f.id ? 'style="background:var(--hover)"' : ''}><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0])}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">vence ${dataCurta(f.vencimento)} · ${st.marcadas} de ${st.compras.length} compras · ${sens(brl(st.total))}</span></span>${pill}</button>`;
     }).join('') : `<div class="vazio">Nenhuma fatura conta em ${esc(nomeM)}.</div>`}</div>`;
 
   const listaContas = `<div class="secao-titulo"><span>Contas em ${esc(nomeM)}</span></div>
     <div class="lista">${contas.map((c) => {
       const st = estados[c.id];
       const pill = st.conferida ? '<span class="pill ok">Conferida</span>' : st.banco !== null || st.marcadas ? '<span class="pill aviso">Conferindo</span>' : '<span class="pill neutra">A conferir</span>';
-      return `<button class="item" data-a="abrirConfConta" data-id="${c.id}" ${cSel && cSel.id === c.id ? 'style="background:#232832"' : ''}><span class="chip-cor" style="background:${corConta(c.cor)}">${esc((c.nome || '?')[0])}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">${st.marcadas} de ${st.itens.length} lançamentos · saldo ${sens(brlSinal(st.app))}</span></span>${pill}</button>`;
+      return `<button class="item" data-a="abrirConfConta" data-id="${c.id}" ${cSel && cSel.id === c.id ? 'style="background:var(--hover)"' : ''}><span class="chip-cor" style="background:${corConta(c.cor)}">${esc((c.nome || '?')[0])}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">${st.marcadas} de ${st.itens.length} lançamentos · saldo ${sens(brlSinal(st.app))}</span></span>${pill}</button>`;
     }).join('')}</div>`;
 
   const painel = fSel ? painelFatura(E, A, fSel) : cSel ? painelConta(E, A, cSel, estados[cSel.id]) : `<div class="cartao so-pc" style="text-align:center;color:var(--muted);padding:40px 16px">${ic('faturas', 32)}<p style="margin-top:8px">Escolha uma fatura ou uma conta para conferir com o banco.</p></div>`;
@@ -135,7 +135,7 @@ function painelConta(E, A, c, st) {
   else if (st.dif !== null && st.dif < -0.005) dica = `No app tem ${brl(-st.dif)} a mais: falta lançar uma saída (pix, boleto, tarifa…), ou uma entrada foi lançada a mais.`;
   const temTab = E.banco.temCampo('confContas', 'conta');
   const rodape = st.conferida
-    ? `<div class="aviso-caixa" style="background:#18363A;color:#B8E9EC">${ic('ok', 18)}<span>Conta conferida em ${esc(nomeM)}. <button class="link" data-a="desconferirConta" data-id="${c.id}">Desfazer</button></span></div>`
+    ? `<div class="aviso-caixa" style="background:var(--ok-bg);color:var(--ok-txt)">${ic('ok', 18)}<span>Conta conferida em ${esc(nomeM)}. <button class="link" data-a="desconferirConta" data-id="${c.id}">Desfazer</button></span></div>`
     : `<button class="btn btn-pri btn-largo" data-a="concluirConta" data-id="${c.id}" ${st.pronta ? '' : 'aria-disabled="true"'}>${st.pronta ? 'Conta conferida' : st.banco === null ? 'Digite o saldo do banco' : Math.abs(st.dif) >= 0.005 ? 'Ainda há diferença' : 'Marque todos os lançamentos'}</button>`;
   return `<div class="cartao" style="padding:0;overflow:hidden">
     <div style="padding:16px">
@@ -167,7 +167,7 @@ function painelFatura(E, A, f) {
   if (st.dif !== null && st.dif > 0.005) dica = `No banco tem ${brl(st.dif)} a mais: provavelmente uma compra que não foi lançada (ou lançada em outra fatura).`;
   else if (st.dif !== null && st.dif < -0.005) dica = `No app tem ${brl(-st.dif)} a mais: confira se alguma compra foi lançada em dobro, com valor errado, ou se caiu na fatura seguinte.`;
   const rodape = f.conferida
-    ? `<div class="aviso-caixa" style="background:#18363A;color:#B8E9EC">${ic('ok', 18)}<span>Fatura conferida. <button class="link" data-a="desconferirFatura" data-id="${f.id}">Desfazer</button></span></div>`
+    ? `<div class="aviso-caixa" style="background:var(--ok-bg);color:var(--ok-txt)">${ic('ok', 18)}<span>Fatura conferida. <button class="link" data-a="desconferirFatura" data-id="${f.id}">Desfazer</button></span></div>`
     : `<button class="btn btn-pri btn-largo" data-a="concluirFatura" data-id="${f.id}" ${st.pronta ? '' : 'aria-disabled="true"'}>${st.pronta ? 'Fatura conferida' : st.banco === null ? 'Digite o total do banco' : Math.abs(st.dif) >= 0.005 ? 'Ainda há diferença' : 'Marque todas as compras'}</button>`;
   return `<div class="cartao" style="padding:0;overflow:hidden">
     <div style="padding:16px">
@@ -609,7 +609,7 @@ export function modalMeta(E, A, m) {
 }
 
 // ------------------------------------------------------------ relatórios
-const COR_PESSOA = { dem: '#5B8AF0', gio: '#2AAE78', fam: '#C8772E' };
+const COR_PESSOA = { dem: 'var(--serie-d)', gio: 'var(--serie-g)', fam: 'var(--serie-f)' };
 
 export function telaRelatorios(E) {
   const A = apoio(E);
@@ -704,7 +704,7 @@ export function telaRelatorios(E) {
       </div>`; }).join('')}
       <div style="display:flex;gap:16px;margin-top:14px;font-size:12px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--soft);margin-right:6px"></span>Quanto pagou dos gastos da família</span><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--soft) 0 2px,transparent 2px 5px);outline:1px solid var(--soft);outline-offset:-1px;margin-right:6px"></span>Parte que cabe a cada um</span></div>
     </div>
-    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:#E8C9A6">Somando tudo (gastos de um pagos pelo outro, transferências, acertos já feitos)</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a>`;
+    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Somando tudo (gastos de um pagos pelo outro, transferências, acertos já feitos)</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a>`;
     if (!p1 || !p2) corpo = '<div class="vazio">Precisa de duas pessoas na aba Pessoas.</div>';
   }
   return casca(E, 'Relatórios', abas + corpo, { voltar: 'planejamento', acoes: seletorMes(E) });

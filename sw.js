@@ -1,9 +1,9 @@
 // Service worker: guarda a "casca" do app para abrir rápido e sem internet.
 // Os dados vêm sempre da planilha (não são guardados aqui).
-const VERSAO = 'economiau-v1.15';
+const VERSAO = 'economiau-v1.16';
 const ARQUIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/config.js', 'js/dados.js', 'js/google.js', 'js/icones.js', 'js/regras.js', 'js/telas.js', 'js/telas2.js', 'js/invest.js', 'js/util.js',
+  'js/app.js', 'js/config.js', 'js/dados.js', 'js/google.js', 'js/icones.js', 'js/regras.js', 'js/telas.js', 'js/telas2.js', 'js/telas3.js', 'js/invest.js', 'js/util.js',
   'assets/davinci-corpo.webp', 'assets/seringa-corpo.webp', 'assets/davinci-rosto.webp', 'assets/seringa-rosto.webp', 'assets/familia-rosto.webp',
   'assets/davinci-despesa.webp', 'assets/davinci-receita.webp', 'assets/seringa-despesa.webp', 'assets/seringa-receita.webp',
   'assets/familia-despesa.webp', 'assets/familia-receita.webp', 'assets/icone-192.png', 'assets/favicon.png',
@@ -27,4 +27,15 @@ self.addEventListener('fetch', (e) => {
       return r;
     }).catch(() => caches.match(e.request).then((r) => r || caches.match('index.html'))),
   );
+});
+
+// toque na notificação: abre o app na tela do aviso
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const rota = (e.notification.data && e.notification.data.rota) || 'inicio';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+    const c = cs.find((x) => 'focus' in x);
+    if (c) { c.navigate ? c.navigate('./#/' + rota) : null; return c.focus(); }
+    return self.clients.openWindow('./#/' + rota);
+  }));
 });

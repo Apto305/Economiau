@@ -1,10 +1,11 @@
 // Economiau — estado, navegação e ações.
 import { CONFIG } from './config.js';
 import * as G from './google.js';
-import { BancoPlanilha, BancoDemo } from './dados.js';
+import { BancoPlanilha, BancoDemo, temCopia } from './dados.js';
 import * as R from './regras.js';
 import * as T from './telas.js';
 import * as T2 from './telas2.js';
+import * as T3 from './telas3.js';
 import * as I from './invest.js';
 import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero, dataNoMes, esc } from './util.js';
 
@@ -16,8 +17,8 @@ const LS = {
 
 const E = {
   fase: 'iniciando', erro: '', msgCarregando: '', email: LS.get('email', ''), banco: null, db: null,
-  perfil: LS.get('perfil'), rota: 'inicio', mes: mesDe(hojeISO()), filtros: { ...T.FILTROS_PADRAO }, modal: null, modalPai: null,
-  ocultar: LS.get('ocultar', false), toast: null, salvando: false, sessaoExpirada: false, versao: CONFIG.versaoApp,
+  perfil: (() => { const c = T3.config(); return c.perfilAoAbrir === 'perguntar' ? null : c.perfilAoAbrir !== 'ultimo' ? c.perfilAoAbrir : LS.get('perfil'); })(), rota: 'inicio', mes: mesDe(hojeISO()), filtros: { ...T.FILTROS_PADRAO }, modal: null, modalPai: null,
+  ocultar: T3.config().ocultarAoAbrir || LS.get('ocultar', false), toast: null, salvando: false, sessaoExpirada: false, versao: CONFIG.versaoApp,
   cartaoSel: null, faturaSel: null, rev: 0,
   confFatura: null, saldoBanco: {}, contasOk: LS.get('contasOk', {}),
 };
@@ -29,7 +30,9 @@ function desenhar() {
   const foco = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.campo : null;
   const rolagens = [...document.querySelectorAll('.rolar, .folha')].map((el) => el.scrollTop);
   const y = window.scrollY;
-  document.body.className = 'perfil-' + (E.db && E.perfil ? T.apoio(E).chave(E.perfil) : 'demetrio');
+  document.body.className = 'perfil-' + (E.db && E.perfil ? T.apoio(E).chave(E.perfil) : 'demetrio') + (temaClaro() ? ' tema-claro' : '');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', temaClaro() ? '#F4F5F7' : '#15181E');
   let html = '';
   if (E.fase === 'iniciando' || E.fase === 'carregando') html = T.telaCarregando(E);
   else if (E.fase === 'entrar') html = T.telaEntrar(E);
@@ -38,7 +41,7 @@ function desenhar() {
   else if (E.fase === 'erro') html = T.telaErro(E);
   else if (E.rota === 'perfis' || !E.perfil) html = T.telaPerfis(E);
   else {
-    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias, tags: T.telaTags, planejamento: T2.telaPlanejamento, relatorios: T2.telaRelatorios };
+    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias, tags: T.telaTags, planejamento: T2.telaPlanejamento, relatorios: T2.telaRelatorios, config: T3.telaConfig };
     html = (telas[E.rota] || T.telaInicio)(E) + T.modal(E);
   }
   raiz.innerHTML = html + T.toast(E);
@@ -67,6 +70,9 @@ async function iniciar() {
   desenhar();
   try { await G.prepararLogin(); } catch (e) { /* sem internet: tenta seguir */ }
   if (G.tokenValido()) return depoisDoLogin();
+  // sem internet e sem sessão: abre a última cópia guardada no aparelho
+  const id = LS.get('planilha');
+  if (!navigator.onLine && id && temCopia(id) && E.email) return abrirOffline(id);
   E.fase = 'entrar';
   desenhar();
 }
@@ -78,6 +84,65 @@ function lerRota() {
   E.modal = null; E.modalPai = null;
 }
 function ir(rota) { if (location.hash !== '#/' + rota) location.hash = '#/' + rota; else { E.rota = rota; desenhar(); } }
+
+// ------------------------------------------------------------ tema
+const escuroNoSistema = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+function temaClaro() {
+  const t = T3.config().tema;
+  return t === 'claro' || (t === 'auto' && escuroNoSistema && !escuroNoSistema.matches);
+}
+if (escuroNoSistema && escuroNoSistema.addEventListener) escuroNoSistema.addEventListener('change', () => desenhar());
+const salvarConfig = (mudar) => { const c = T3.config(); mudar(c); LS.set('config', c); };
+
+// Avisos como notificação do sistema, ao abrir o app (uma vez por dia cada)
+async function notificarAvisos() {
+  try {
+    const cfg = T3.config();
+    if (!cfg.notificar || typeof Notification === 'undefined' || Notification.permission !== 'granted' || !E.perfil) return;
+    const hoje = hojeISO();
+    const feitos = LS.get('notificados', {});
+    Object.keys(feitos).forEach((k) => { if (feitos[k] < somaDias(hoje, -40)) delete feitos[k]; });
+    const novos = T3.avisos(E).filter((a) => feitos[a.chave] !== hoje && !(feitos[a.chave] && a.chave.startsWith('meta:')) );
+    if (!novos.length) return;
+    const reg = navigator.serviceWorker ? await navigator.serviceWorker.getRegistration() : null;
+    for (const a of novos.slice(0, 4)) {
+      const op = { body: a.texto, tag: a.chave, icon: 'assets/icone-192.png', data: { rota: a.rota } };
+      if (reg && reg.showNotification) await reg.showNotification('Economiau', op); else new Notification('Economiau', op);
+      feitos[a.chave] = hoje;
+    }
+    LS.set('notificados', feitos);
+  } catch (e) { /* sem notificação */ }
+}
+
+const semRede = (e) => e instanceof TypeError || (e && /Failed to fetch|NetworkError|Load failed|network/i.test(e.message || ''));
+
+// Sem internet: usa a última cópia dos dados guardada neste aparelho
+function abrirOffline(id) {
+  E.banco = new BancoPlanilha(id);
+  E.db = E.banco.abrirCopia();
+  if (!E.db) { E.fase = 'entrar'; E.erro = 'Sem internet e sem cópia dos dados neste aparelho.'; desenhar(); return; }
+  const pessoa = E.db.pessoas.find((p) => String(p.email || '').toLowerCase() === E.email);
+  if (!pessoa) { E.fase = 'negado'; desenhar(); return; }
+  if (!E.perfil || !R.porId(E.db.pessoas, E.perfil)) E.perfil = null;
+  E.fase = 'pronto'; E.erro = '';
+  desenhar();
+}
+
+// A conexão voltou: envia o que ficou na fila (precisa da sessão do Google)
+async function conexaoVoltou() {
+  if (!E.banco || E.banco.demo || !(E.banco.offline || E.banco.pendentes)) { desenhar(); return; }
+  E.banco.offline = false; // tenta a rede de novo
+  const n = E.banco.pendentes;
+  if (!G.tokenValido()) { E.sessaoExpirada = true; desenhar(); return; }
+  try {
+    E.db = await E.banco.carregar(); E.rev++;
+    if (E.banco.offline) avisar('Ainda sem conexão com a planilha.', true);
+    else if (n) avisar(n === 1 ? '1 lançamento feito sem internet foi enviado para a planilha.' : n + ' lançamentos feitos sem internet foram enviados para a planilha.');
+    else desenhar();
+  } catch (e) { tratarErro(e); }
+}
+window.addEventListener('online', () => setTimeout(conexaoVoltou, 1500));
+window.addEventListener('offline', () => { if (E.banco && !E.banco.demo) E.banco.offline = true; desenhar(); });
 
 async function abrirDemo() {
   E.banco = new BancoDemo();
@@ -95,6 +160,8 @@ async function depoisDoLogin() {
     E.email = (u.email || '').toLowerCase();
     LS.set('email', E.email);
   } catch (e) {
+    const id0 = LS.get('planilha');
+    if (semRede(e) && id0 && temCopia(id0) && E.email) return abrirOffline(id0);
     E.fase = 'entrar'; E.erro = e instanceof G.SessaoExpirada ? '' : e.message; desenhar(); return;
   }
   const id = LS.get('planilha');
@@ -108,6 +175,7 @@ async function carregarPlanilha(id) {
     E.banco = new BancoPlanilha(id);
     E.db = await E.banco.carregar();
   } catch (e) {
+    if (semRede(e) && temCopia(id)) return abrirOffline(id);
     if (e instanceof G.SessaoExpirada) { E.fase = 'entrar'; E.erro = ''; desenhar(); return; }
     if (e.status === 403 || e.status === 404) { LS.del('planilha'); E.fase = 'conectar'; E.erro = 'O app não conseguiu abrir a planilha. Escolha de novo no seletor.'; desenhar(); return; }
     E.fase = 'erro'; E.erro = e.message; desenhar(); return;
@@ -118,6 +186,8 @@ async function carregarPlanilha(id) {
   E.fase = 'pronto'; E.erro = ''; E.sessaoExpirada = false;
   if (!E.db.contas.some(R.ativo) && !LS.get('primeiro-ok-' + id)) { if (E.perfil) ir('primeiro'); }
   desenhar();
+  if (E.banco.offline) return;
+  notificarAvisos();
   await corrigirFaturas();
   try {
     const n = await corrigirResgates();
@@ -283,9 +353,40 @@ const A = {
     if (E.fase === 'erro') { const id = LS.get('planilha'); if (id) carregarPlanilha(id); return; }
     await recarregarDados(); avisar('Dados atualizados.');
   },
+  enviarFila() { conexaoVoltou(); },
+  // ------------------------------------------------------- Início personalizável
+  personalizarInicio() { E.inicioRasc = JSON.parse(JSON.stringify(T3.prefsInicio(E.perfil))); E.modal = { tipo: 'inicioCfg' }; E.modalPai = null; desenhar(); },
+  inicioBloco(d) {
+    if (T3.OBRIGATORIOS.includes(d.id)) return avisar('Contas e Faturas sempre aparecem no Início.');
+    const r = E.inicioRasc; r.off = r.off.includes(d.id) ? r.off.filter((x) => x !== d.id) : [...r.off, d.id]; desenhar();
+  },
+  inicioLargo(d) { const r = E.inicioRasc; r.largo = r.largo.includes(d.id) ? r.largo.filter((x) => x !== d.id) : [...r.largo, d.id]; desenhar(); },
+  inicioMover(d) {
+    const r = E.inicioRasc; const i = r.ordem.indexOf(d.id); const j = i + Number(d.v);
+    if (i < 0 || j < 0 || j >= r.ordem.length) return;
+    [r.ordem[i], r.ordem[j]] = [r.ordem[j], r.ordem[i]]; desenhar();
+  },
+  salvarInicio() { LS.set('inicio-' + E.perfil, E.inicioRasc); E.inicioRasc = null; E.modal = null; avisar('Início salvo.'); },
+  inicioPadrao() { LS.del('inicio-' + E.perfil); E.inicioRasc = JSON.parse(JSON.stringify(T3.prefsInicio(E.perfil))); desenhar(); },
+  fecharInicio() { E.inicioRasc = null; E.modal = null; desenhar(); },
+  // ------------------------------------------------------------ configurações
+  cfg(d) { salvarConfig((c) => { c[d.c] = d.c === 'diasFatura' ? Number(d.v) : d.v; }); desenhar(); },
+  cfgOcultar() { salvarConfig((c) => { c.ocultarAoAbrir = !c.ocultarAoAbrir; }); desenhar(); },
+  cfgAviso(d) { salvarConfig((c) => { c.avisos[d.v] = !c.avisos[d.v]; }); desenhar(); },
+  async cfgNotificar() {
+    const ligar = !(T3.config().notificar && Notification.permission === 'granted');
+    if (ligar && Notification.permission !== 'granted') {
+      const r = await Notification.requestPermission();
+      if (r !== 'granted') { avisar('O celular não liberou as notificações.', true); desenhar(); return; }
+    }
+    salvarConfig((c) => { c.notificar = ligar; });
+    if (ligar) { LS.set('notificados', {}); notificarAvisos(); avisar('Notificações ligadas.'); } else desenhar();
+  },
   async renovar() {
     try { await G.entrar(E.email); } catch (e) { avisar(e.message, true); return; }
-    E.sessaoExpirada = false; await recarregarDados(); desenhar();
+    const n = E.banco && E.banco.pendentes ? E.banco.pendentes : 0;
+    E.sessaoExpirada = false; await recarregarDados();
+    if (n && E.banco && !E.banco.pendentes) avisar(n === 1 ? '1 lançamento feito sem internet foi enviado.' : n + ' lançamentos feitos sem internet foram enviados.'); else desenhar();
   },
   escolherPerfil(d) {
     E.perfil = d.id; LS.set('perfil', d.id);

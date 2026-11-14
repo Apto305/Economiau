@@ -145,10 +145,86 @@ function normalizar(nome, o) {
 }
 
 // ------------------------------------------------------------- planilha
-export class BancoPlanilha {
-  constructor(id) { this.id = id; this.mapa = {}; this.linhas = {}; this.sheetIds = {}; }
+// Sem internet: o app usa a última cópia guardada no aparelho e guarda os
+// lançamentos numa fila, que vai para a planilha quando a conexão volta.
+const chaveCopia = (id) => 'economiau-copia-' + id;
+const chaveFila = (id) => 'economiau-fila-' + id;
+const ler = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } };
+const gravar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+const semRede = (e) => e instanceof TypeError || (e && /Failed to fetch|NetworkError|Load failed|network/i.test(e.message || ''));
+export const temCopia = (id) => !!ler(chaveCopia(id), null);
 
+export class BancoPlanilha {
+  constructor(id) { this.id = id; this.mapa = {}; this.linhas = {}; this.sheetIds = {}; this.offline = false; }
+
+  // ---- fila de envio
+  get fila() { return ler(chaveFila(this.id), []); }
+  set fila(f) { gravar(chaveFila(this.id), f); }
+  get pendentes() { return this.fila.reduce((n, op) => n + (op.lista ? op.lista.length : op.ids.length), 0); }
+
+  guardarCopia() {
+    gravar(chaveCopia(this.id), { db: this.db, mapa: this.mapa, linhas: this.linhas, ultimaLinha: this.ultimaLinha, sheetIds: this.sheetIds, titulo: this.titulo, temOpcionais: this.temOpcionais, em: Date.now() });
+  }
+  abrirCopia() {
+    const c = ler(chaveCopia(this.id), null);
+    if (!c) return null;
+    Object.assign(this, { db: c.db, mapa: c.mapa, linhas: c.linhas, ultimaLinha: c.ultimaLinha, sheetIds: c.sheetIds, titulo: c.titulo, temOpcionais: c.temOpcionais, copiaEm: c.em });
+    this.offline = true;
+    return this.db;
+  }
+
+  // Lê a planilha. Com lançamentos na fila, envia a fila e lê de novo.
   async carregar() {
+    if (this.offline && !navigator.onLine && this.db) return this.db;
+    try {
+      await this.lerPlanilha();
+    } catch (e) {
+      if (semRede(e) && this.db) { this.offline = true; return this.db; }
+      throw e;
+    }
+    this.offline = false;
+    if (this.fila.length) { await this.enviarFila(); await this.lerPlanilha(); }
+    this.guardarCopia();
+    return this.db;
+  }
+
+  // Envia a fila na ordem em que foi feita. Códigos (ID) criados sem internet
+  // que já foram usados por outra pessoa ganham um código novo, e as
+  // referências a eles nos lançamentos seguintes são trocadas junto.
+  async enviarFila() {
+    const troca = {};
+    const mapear = (v) => {
+      if (typeof v !== 'string' || !v) return v;
+      if (troca[v]) return troca[v];
+      if (v.includes(',')) return v.split(',').map((x) => troca[x.trim()] || x.trim()).join(', ');
+      return v;
+    };
+    const mapearObj = (o) => { const n = {}; Object.entries(o).forEach(([c, v]) => (n[c] = mapear(v))); return n; };
+    let fila = this.fila;
+    while (fila.length) {
+      const op = fila[0];
+      if (op.op === 'inserir') {
+        const def = ABAS[op.k];
+        let n = proximoNumero(this.db[op.k], def.prefixo);
+        const lista = op.lista.map((o0) => {
+          const o = mapearObj(o0);
+          if (this.db[op.k].some((x) => x.id === o.id)) { const novo = formatarId(def.prefixo, n++); troca[o0.id] = novo; o.id = novo; }
+          return o;
+        });
+        await this.inserirOnline(op.k, lista, true);
+      } else if (op.op === 'atualizar') {
+        const lista = op.lista.map(mapearObj).filter((o) => this.linhas[op.k][o.id]); // apagado por outra pessoa: ignora
+        if (lista.length) await this.atualizarOnline(op.k, lista);
+      } else if (op.op === 'excluir') {
+        const ids = op.ids.map(mapear).filter((id) => this.linhas[op.k][id]);
+        if (ids.length) await this.excluirOnline(op.k, ids);
+      }
+      fila = fila.slice(1);
+      this.fila = fila; // tira da fila só depois de enviar
+    }
+  }
+
+  async lerPlanilha() {
     // abas opcionais (de versões novas do script) só são lidas se existirem
     if (!this.temOpcionais) {
       const meta0 = await sheets.metadados(this.id);
@@ -213,23 +289,43 @@ export class BancoPlanilha {
     return data.map((s) => ({ range: sheets.intervalo(ABAS[k].aba, linha, s.ini + 1, s.fim + 1), values: [s.vals] }));
   }
 
+  // ---- gravação: com internet vai direto; sem internet, entra na fila
+  async semInternet(fn) {
+    if (this.offline || !navigator.onLine) { this.offline = true; return true; }
+    try { await fn(); return false; } catch (e) { if (semRede(e)) { this.offline = true; return true; } throw e; }
+  }
+  enfileirar(op) { const f = this.fila; f.push(op); this.fila = f; }
+
   async inserir(k, lista) {
     const def = ABAS[k];
     let n = proximoNumero(this.db[k], def.prefixo);
-    const data = [];
-    lista.forEach((o) => {
-      if (!o.id) o.id = formatarId(def.prefixo, n++);
-      if ('criadoEm' in def.campos) o.criadoEm = agoraSerial();
-      const linha = ++this.ultimaLinha[k];
-      this.linhas[k][o.id] = linha;
-      data.push(...this.intervalosDaLinha(k, linha, o));
-    });
-    await sheets.escrever(this.id, data);
-    lista.forEach((o) => this.db[k].push(normalizar(k, { ...o })));
+    lista.forEach((o) => { if (!o.id) o.id = formatarId(def.prefixo, n++); if ('criadoEm' in def.campos) o.criadoEm = agoraSerial(); });
+    const fila = await this.semInternet(() => this.inserirOnline(k, lista));
+    if (fila) { this.enfileirar({ op: 'inserir', k, lista: lista.map((o) => ({ ...o })) }); lista.forEach((o) => this.db[k].push(normalizar(k, { ...o }))); }
+    this.guardarCopia();
     return lista;
+  }
+  async inserirOnline(k, lista, daFila) {
+    const data = [];
+    const linhas = {};
+    let ult = this.ultimaLinha[k];
+    lista.forEach((o) => { const linha = ++ult; linhas[o.id] = linha; data.push(...this.intervalosDaLinha(k, linha, o)); });
+    await sheets.escrever(this.id, data);
+    this.ultimaLinha[k] = ult;
+    Object.assign(this.linhas[k], linhas);
+    lista.forEach((o) => this.db[k].push(normalizar(k, { ...o })));
+    if (daFila) return;
   }
 
   async atualizar(k, lista) {
+    const fila = await this.semInternet(() => this.atualizarOnline(k, lista));
+    if (fila) {
+      this.enfileirar({ op: 'atualizar', k, lista: lista.map((o) => ({ ...o })) });
+      lista.forEach((o) => { const i = this.db[k].findIndex((x) => x.id === o.id); if (i >= 0) this.db[k][i] = normalizar(k, { ...this.db[k][i], ...o }); });
+    }
+    this.guardarCopia();
+  }
+  async atualizarOnline(k, lista) {
     const data = [];
     lista.forEach((o) => {
       const linha = this.linhas[k][o.id];
@@ -244,12 +340,25 @@ export class BancoPlanilha {
   }
 
   async excluir(k, ids) {
+    const fila = await this.semInternet(() => this.excluirOnline(k, ids));
+    if (fila) {
+      // feito sem internet: se ainda estava só na fila, some da fila; senão, entra na fila
+      const f = this.fila;
+      const soNaFila = ids.filter((id) => f.some((op) => op.op === 'inserir' && op.k === k && op.lista.some((o) => o.id === id)));
+      const resto = ids.filter((id) => !soNaFila.includes(id));
+      this.fila = f.map((op) => (op.k === k && op.lista ? { ...op, lista: op.lista.filter((o) => !soNaFila.includes(o.id)) } : op)).filter((op) => !op.lista || op.lista.length);
+      if (resto.length) this.enfileirar({ op: 'excluir', k, ids: resto });
+      this.db[k] = this.db[k].filter((x) => !ids.includes(x.id));
+    }
+    this.guardarCopia();
+  }
+  async excluirOnline(k, ids) {
     const sheetId = this.sheetIds[ABAS[k].aba];
     const linhas = ids.map((id) => this.linhas[k][id]).filter(Boolean).sort((a, b) => b - a); // de baixo para cima
     if (!linhas.length) return;
     await sheets.lote(this.id, linhas.map((l) => ({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: l - 1, endIndex: l } } })));
     // recarrega para recalcular os números das linhas
-    await this.carregar();
+    await this.lerPlanilha();
   }
 }
 

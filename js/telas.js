@@ -4,6 +4,7 @@ import { esc, brl, brlSinal, dataCurta, dataBR, nomeMesAno, mesCurto, diaSemana,
 import { ic } from './icones.js';
 import * as R from './regras.js';
 import * as T2 from './telas2.js';
+import * as T3 from './telas3.js';
 
 const sens = (txt) => `<span class="valor-sens">${txt}</span>`;
 const COR_CONTA = { Roxo: '#7C4DDB', Azul: '#3D7BE0', Verde: '#1E9E6E', Laranja: '#E8742A', Vermelho: '#D9485A', Preto: '#2A2F38', Cinza: '#6B7383' };
@@ -200,7 +201,7 @@ const MENU = [
   ['Fechamento do mês', [['conferencia', 'Conferência', 'ok'], ['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
   ['Patrimônio', [['investimentos', 'Investimentos', 'investir']]],
   ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['tags', 'Tags', 'etiqueta'], ['rendas', 'Rendas e divisão', 'rendas']]],
-  ['', [['mais', 'Configurações', 'config']]],
+  ['', [['config', 'Configurações', 'config']]],
 ];
 
 export function casca(E, titulo, corpo, opcoes = {}) {
@@ -218,10 +219,15 @@ export function casca(E, titulo, corpo, opcoes = {}) {
     <a href="#/transacoes" ${rota === 'transacoes' ? 'aria-current="page"' : ''}>${ic('transacoes', 22)}Transações</a>
     <button class="mais-btn" data-a="menuLancar" aria-label="Novo lançamento">${ic('mais_', 26)}</button>
     <a href="#/planejamento" ${rota === 'planejamento' || rota === 'relatorios' ? 'aria-current="page"' : ''}>${ic('planejar', 22)}Planejar</a>
-    <a href="#/mais" ${['mais', 'acerto', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias', 'tags'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
+    <a href="#/mais" ${['mais', 'config', 'acerto', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias', 'tags'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
   </nav>`;
   const voltar = opcoes.voltar ? `<a class="icone-btn so-cel" href="#/${opcoes.voltar}" aria-label="Voltar">${ic('voltar', 22)}</a>` : '';
-  let banner = E.sessaoExpirada ? `<div class="banner">${ic('aviso', 18)}<span>A sessão do Google expirou.</span><button class="btn btn-peq btn-sec" data-a="renovar">Continuar</button></div>` : '';
+  const pend = E.banco && !E.banco.demo && E.banco.pendentes ? E.banco.pendentes : 0;
+  const pendTxt = pend ? ` ${pend === 1 ? '1 lançamento esperando' : pend + ' lançamentos esperando'} para ir para a planilha.` : '';
+  let banner = E.banco && E.banco.offline
+    ? `<div class="banner">${ic('aviso', 18)}<span>Sem internet: mostrando os dados guardados neste aparelho${E.banco.copiaEm ? ' (de ' + new Date(E.banco.copiaEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + ')' : ''}. Pode lançar normalmente.${pendTxt}</span><button class="btn btn-peq btn-sec" data-a="enviarFila">Tentar de novo</button></div>`
+    : E.sessaoExpirada ? `<div class="banner">${ic('aviso', 18)}<span>A sessão do Google expirou.${pendTxt ? ' Entre de novo para enviar:' + pendTxt : ''}</span><button class="btn btn-peq btn-sec" data-a="renovar">Continuar</button></div>`
+    : pend ? `<div class="banner">${ic('aviso', 18)}<span>${pendTxt.trim()}</span><button class="btn btn-peq btn-sec" data-a="enviarFila">Enviar agora</button></div>` : '';
   if (E.banco && !E.banco.demo && !E.banco.temCampo('transacoes', 'tags')) banner += `<div class="banner">${ic('aviso', 18)}<span>Atualize a planilha para a versão 1.8 (rode o script de montagem) para usar tags, contas fixas e "deduz da renda".</span></div>`;
   return `<div class="casca ${E.ocultar ? 'oculto' : ''}">${lateral}
     <div class="principal">
@@ -275,30 +281,39 @@ export function telaInicio(E) {
 
   const acertoCard = (() => {
     const r = ac.resultado;
-    if (!r) return `<a class="acerto-hero zerado" href="#/acerto">${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong><span style="display:block;font-size:13px;color:#B8E9EC">Ninguém deve nada por enquanto.</span></span>${ic('seta', 18)}</a>`;
-    return `<a class="acerto-hero" href="#/acerto">${A.avatar(r.de, 40)}${ic('acerto', 20, 'style="color:var(--f)"')}${A.avatar(r.para, 40)}<span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;color:#E8C9A6">Acerto do mês até agora</span><strong style="font-size:15px">${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>${ic('seta', 18)}</a>`;
+    if (!r) return `<a class="acerto-hero zerado" href="#/acerto">${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong><span style="display:block;font-size:13px;color:var(--ok-txt)">Ninguém deve nada por enquanto.</span></span>${ic('seta', 18)}</a>`;
+    return `<a class="acerto-hero" href="#/acerto">${A.avatar(r.de, 40)}${ic('acerto', 20, 'style="color:var(--f)"')}${A.avatar(r.para, 40)}<span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto do mês até agora</span><strong style="font-size:15px">${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>${ic('seta', 18)}</a>`;
   })();
 
-  const contasCard = `<div class="bloco"><div class="secao-titulo"><span>Contas</span><a href="#/contas">Ver todas</a></div>
-    <div class="lista">${contas.length ? contas.map((c) => `<a class="item" href="#/contas"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">${esc(c.tipo || '')}</span></span><span class="valor">${sens(brl(R.saldoConta(db, c)))}</span></a>`).join('') : `<div class="vazio">Nenhuma conta cadastrada. <button class="link" data-a="ir" data-v="contas">Cadastrar</button></div>`}</div></div>`;
+  const contasCard = `<div class="secao-titulo"><span>Contas</span><a href="#/contas">Ver todas</a></div>
+    <div class="lista">${contas.length ? contas.map((c) => `<a class="item" href="#/contas"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(A.nomeConta(c.id))}</span><span class="sub">${esc(c.tipo || '')}</span></span><span class="valor">${sens(brl(R.saldoConta(db, c)))}</span></a>`).join('') : `<div class="vazio">Nenhuma conta cadastrada. <button class="link" data-a="ir" data-v="contas">Cadastrar</button></div>`}</div>`;
 
-  const faturasCard = cartoes.length ? `<div class="bloco"><div class="secao-titulo"><span>Faturas</span><a href="#/faturas">Ver faturas</a></div>
-    <div class="lista">${cartoes.map((c) => {
+  const faturasCard = `<div class="secao-titulo"><span>Faturas</span><a href="#/faturas">Ver faturas</a></div>
+    <div class="lista">${cartoes.length ? cartoes.map((c) => {
       const f = R.faturaAtual(db, c, A.hoje);
       const total = f ? R.totalFatura(db, f.id) : 0;
       const sit = f ? R.situacaoFatura(db, f, A.hoje) : '';
       return `<a class="item" href="#/faturas"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0])}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${f ? sit + ' · vence ' + dataCurta(f.vencimento) : 'Sem fatura aberta'}</span></span><span class="valor">${sens(brl(total))}</span></a>`;
-    }).join('')}</div></div>` : '';
+    }).join('') : '<div class="vazio">Nenhum cartão neste perfil.</div>'}</div>`;
 
   const prev = itensDoMes(E, A, mes).filter((x) => x.t.virtual && R.visivelNoPerfil(db, x.t, p)).sort((a, b) => (a.t.data < b.t.data ? -1 : 1));
-  const fixasCard = prev.length ? `<div class="bloco"><div class="secao-titulo"><span>Contas fixas ainda não lançadas</span><a href="#/fixas">Ver todas</a></div>
-    <div class="lista">${prev.slice(0, 5).map((x) => itemTransacao(E, A, x)).join('')}</div></div>` : '';
+  const fixasCard = `<div class="secao-titulo"><span>Contas fixas ainda não lançadas</span><a href="#/fixas">Ver todas</a></div>
+    <div class="lista">${prev.length ? prev.slice(0, 5).map((x) => itemTransacao(E, A, x)).join('') : `<div class="vazio">Todas as contas fixas de ${esc(nomeM)} já foram lançadas.</div>`}</div>`;
 
-  const ultimos = `<div class="bloco larga"><div class="secao-titulo"><span>Últimos lançamentos</span><a href="#/transacoes">Ver todos</a></div>
-    <div class="lista">${itens.length ? itens.map((x) => itemTransacao(E, A, x)).join('') : `<div class="vazio">Nada lançado em ${esc(nomeM)} ainda.</div>`}</div></div>`;
+  const ultimos = `<div class="secao-titulo"><span>Últimos lançamentos</span><a href="#/transacoes">Ver todos</a></div>
+    <div class="lista">${itens.length ? itens.map((x) => itemTransacao(E, A, x)).join('') : `<div class="vazio">Nada lançado em ${esc(nomeM)} ainda.</div>`}</div>`;
 
-  const acoes = `${seletorMes(E)}${botaoOlho(E)}`;
-  const corpo = `${kpis}<div style="margin-top:12px">${acertoCard}</div><div class="grade">${ultimos}${fixasCard}${contasCard}${faturasCard}</div>`;
+  // blocos do Início: cada perfil escolhe quais aparecem, a ordem e o tamanho
+  const cfg = T3.blocosDoInicio(E);
+  const feitos = { resumo: () => kpis, acerto: () => acertoCard, contas: () => contasCard, faturas: () => faturasCard, fixas: () => fixasCard, ultimos: () => ultimos };
+  const html = cfg.filter((b) => b.on).map((b) => {
+    const conteudo = feitos[b.id] ? feitos[b.id]() : T3.blocoExtra(E, A, b.id, res);
+    if (!conteudo) return '';
+    return `<div class="bloco ${b.largo || b.id === 'resumo' ? 'larga' : ''}" data-bloco="${b.id}">${conteudo}</div>`;
+  }).join('');
+  const acoes = `${seletorMes(E)}${botaoOlho(E)}<button class="icone-btn" data-a="personalizarInicio" aria-label="Personalizar o Início">${ic('camadas', 20)}</button>`;
+  const corpo = `<div class="grade grade-inicio">${html}</div>
+    <div style="text-align:center;margin-top:16px"><button class="link" data-a="personalizarInicio">${ic('camadas', 15, 'style="vertical-align:-3px"')} Personalizar o Início</button></div>`;
   const titulo = `<button class="so-cel icone-btn" style="display:inline-flex;vertical-align:middle;margin:-6px 6px -6px -6px;width:auto;padding:0 4px" data-a="ir" data-v="perfis" aria-label="Trocar perfil">${A.avatar(p, 34)}</button>${ehFam ? 'Família' : 'Olá, ' + esc(A.nome(p))}`;
   return casca(E, titulo, corpo, { acoes, acertoTxt: ac.resultado ? brl(ac.resultado.valor).replace(',00', '') : '' });
 }
@@ -356,9 +371,9 @@ export function telaAcerto(E) {
   const [p1, p2] = A.ps;
   if (!p1 || !p2) return casca(E, 'Acerto', '<div class="vazio">O acerto precisa de duas pessoas na aba Pessoas.</div>');
   const hero = r
-    ? `<div class="acerto-hero" style="flex-wrap:wrap">${A.avatar(r.de, 56)}${ic('acerto', 24, 'style="color:var(--f)"')}${A.avatar(r.para, 56)}<div style="flex:1;min-width:220px"><div style="font-size:13px;color:#E8C9A6">Para fechar ${nomeM}</div><div style="font-size:22px;font-weight:800;letter-spacing:-0.4px">${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</div></div>
+    ? `<div class="acerto-hero" style="flex-wrap:wrap">${A.avatar(r.de, 56)}${ic('acerto', 24, 'style="color:var(--f)"')}${A.avatar(r.para, 56)}<div style="flex:1;min-width:220px"><div style="font-size:13px;color:var(--f-txt)">Para fechar ${nomeM}</div><div style="font-size:22px;font-weight:800;letter-spacing:-0.4px">${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</div></div>
        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-pri" style="background:var(--f)" data-a="registrarAcerto">Marcar como acertado</button></div></div>`
-    : `<div class="acerto-hero zerado">${ic('ok', 26)}<div><div style="font-size:18px;font-weight:800">${ac.det.acertos.length ? 'Mês acertado' : 'Ninguém deve nada'}</div><div style="font-size:13px;color:#B8E9EC">${ac.det.acertos.length ? 'O acerto de ' + nomeM + ' já foi registrado.' : 'Até agora os gastos de ' + nomeM + ' estão equilibrados.'}</div></div></div>`;
+    : `<div class="acerto-hero zerado">${ic('ok', 26)}<div><div style="font-size:18px;font-weight:800">${ac.det.acertos.length ? 'Mês acertado' : 'Ninguém deve nada'}</div><div style="font-size:13px;color:var(--ok-txt)">${ac.det.acertos.length ? 'O acerto de ' + nomeM + ' já foi registrado.' : 'Até agora os gastos de ' + nomeM + ' estão equilibrados.'}</div></div></div>`;
   const parte1 = ac.det.parteFam[p1.id] || 0, parte2 = ac.det.parteFam[p2.id] || 0;
   const pago1 = ac.det.pagoFam[p1.id] || 0, pago2 = ac.det.pagoFam[p2.id] || 0;
   const linha = (n, nota, a, b, forte) => `<div class="ag" style="padding:11px 0;border-top:1px solid var(--line);align-items:center"><span><span style="display:block;font-weight:${forte ? 800 : 600}">${n}</span><span class="muted" style="font-size:12.5px">${nota}</span></span><span style="text-align:right;font-weight:${forte ? 800 : 600}">${a}</span><span style="text-align:right;font-weight:${forte ? 800 : 600}">${b}</span></div>`;
@@ -527,6 +542,7 @@ export function telaMais(E) {
     <div class="secao-titulo"><span>Cadastros</span></div>
     <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('categorias', 'etiqueta', 'Categorias', 'Criar, renomear, mover e arquivar')}${link('tags', 'etiqueta', 'Tags', 'Renomear, juntar e excluir')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
     <div class="secao-titulo"><span>App</span></div>
+    <div class="lista" style="margin-bottom:8px">${link('config', 'config', 'Configurações', 'Tema, perfil ao abrir, avisos e planilha')}</div>
     <div class="lista">
       <button class="item" data-a="alternarOcultar">${ic(E.ocultar ? 'olhoFechado' : 'olho', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">${E.ocultar ? 'Mostrar valores' : 'Esconder valores'}</span></span></button>
       <button class="item" data-a="recarregar">${ic('repetir', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">Atualizar dados da planilha</span><span class="sub">${esc(E.banco ? E.banco.titulo : '')}</span></span></button>
@@ -675,7 +691,7 @@ export function modal(E) {
   const m = E.modal;
   if (!m) return '';
   const A = apoio(E);
-  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, tag: modalTag, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov, ajusteInv: T2.modalAjusteInv, meta: T2.modalMeta }[m.tipo];
+  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, tag: modalTag, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov, ajusteInv: T2.modalAjusteInv, meta: T2.modalMeta, inicioCfg: T3.modalInicio }[m.tipo];
   return fn ? fn(E, A, m) : '';
 }
 
