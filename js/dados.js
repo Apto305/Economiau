@@ -66,6 +66,13 @@ const ABAS = {
       obs: ['Observação'], criadoEm: ['Criado em', 'dh'],
     },
   },
+  // Metas: "Mês" = AAAA-MM (só aquele mês) ou "Todo mês" (vale de "A partir de" até "Até")
+  metas: {
+    aba: 'Metas', prefixo: 'MET', campos: {
+      id: ['ID'], mes: ['Mês', 'mt'], categoria: ['Categoria (ID)'], dono: ['Dono (ID)'], valor: ['Valor alvo', 'n'],
+      status: ['Status'], criadoEm: ['Criado em', 'dh'], desde: ['A partir de', 'm'], ate: ['Até', 'm'], avisar: ['Avisar em 80%'],
+    },
+  },
   // aba opcional (planilha 1.15): saldo do banco e conferência de cada conta por mês
   confContas: {
     aba: 'Conferência de contas', prefixo: 'CNF', opcional: true, campos: {
@@ -108,6 +115,7 @@ function lerCelula(v, tipo) {
     case 'n': return v === '' ? '' : (typeof v === 'number' ? v : Number(String(v).replace(',', '.')) || 0);
     case 'b': return v === true || v === 'TRUE' || v === 'Sim';
     case 'm': return typeof v === 'number' ? serialParaISO(v).slice(0, 7) : String(v).slice(0, 7);
+    case 'mt': return typeof v === 'number' ? serialParaISO(v).slice(0, 7) : /^todo/i.test(String(v).trim()) ? 'Todo mês' : String(v).trim().slice(0, 7);
     default: return typeof v === 'string' ? v.trim() : String(v);
   }
 }
@@ -125,6 +133,7 @@ function normalizar(nome, o) {
   if (nome === 'recorrencias') { o.valor = Number(o.valor) || 0; o.dia = Number(o.dia) || 1; if (!o.tipo) o.tipo = 'Despesa'; }
   if ('tags' in o || nome === 'transacoes' || nome === 'rendas' || nome === 'recorrencias') o.tags = o.tags || '';
   if (nome === 'movsInv') o.valor = Number(o.valor) || 0;
+  if (nome === 'metas') { o.valor = Number(o.valor) || 0; if (!o.status) o.status = 'Ativo'; }
   if (nome === 'investimentos') o.taxa = o.taxa === '' ? '' : Number(o.taxa) || 0;
   if (nome === 'contas' || nome === 'transacoes' || nome === 'rendas' || nome === 'acertos') {
     ['valor', 'saldoInicial'].forEach((k) => { if (k in o) o[k] = Number(o[k]) || 0; });
@@ -280,7 +289,7 @@ function dadosDemo() {
   const mes = mesDe(hoje);
   const ant = somaMes(mes, -1);
   const d = (m, dia) => m + '-' + String(dia).padStart(2, '0');
-  const db = { pessoas: [], contas: [], cartoes: [], categorias: [], faturas: [], transacoes: [], rendas: [], acertos: [], recorrencias: [], investimentos: [], movsInv: [], indices: [] };
+  const db = { pessoas: [], contas: [], cartoes: [], categorias: [], faturas: [], transacoes: [], rendas: [], acertos: [], recorrencias: [], investimentos: [], movsInv: [], indices: [], metas: [] };
   db.pessoas = [
     { id: 'PES-0001', nome: 'Demétrio', email: 'demo-demetrio@exemplo.com', tipo: 'Pessoa', status: 'Ativo' },
     { id: 'PES-0002', nome: 'Giovanna', email: 'demo-giovanna@exemplo.com', tipo: 'Pessoa', status: 'Ativo' },

@@ -467,3 +467,125 @@ export function modalMov(E, A, m) {
 }
 
 export { valorTxt };
+
+// ---------------------------------------------------------- planejamento
+const corPct = (p) => (p >= 1 ? 'var(--despesa)' : p >= 0.8 ? 'var(--aviso)' : 'var(--accent)');
+const nomeCat = (db, id) => { const c = R.porId(db.categorias, id); return c ? c.nome : 'Categoria'; };
+
+export function telaPlanejamento(E) {
+  const A = apoio(E);
+  const db = E.db, mes = E.mes, p = E.perfil, fam = A.fam;
+  const ehFam = fam && p === fam.id;
+  const nomeM = nomeMesAno(mes).split(' ')[0].toLowerCase();
+  const res = R.resumoDoMes(db, p, mes);
+  const pl = R.planejadoDoMes(db, p, mes, res.metas);
+  const temPlano = pl.renda || pl.gastos;
+  const dif = arred(res.sobraPrev - pl.sobra);
+
+  const hero = `<div class="cartao">
+      <div class="muted" style="font-size:13px">Sobra prevista em ${esc(nomeM)}</div>
+      <div style="font-size:30px;font-weight:800;letter-spacing:-0.5px;margin-top:2px;color:${res.sobraPrev < 0 ? 'var(--despesa)' : 'var(--text)'}">${sens(brlSinal(res.sobraPrev))}</div>
+      <div class="muted" style="font-size:13px;margin-top:4px">${temPlano ? `Planejada ${sens(brlSinal(pl.sobra))} · ${Math.abs(dif) < 0.01 ? 'igual ao planejado' : sens(brl(Math.abs(dif))) + (dif > 0 ? ' acima' : ' abaixo') + ' do planejado'}` : 'Crie metas e contas fixas para ter um planejado do mês.'}</div>
+    </div>`;
+
+  const cel = (v, forte, cor) => `<span style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:${forte ? 800 : 600};${cor ? 'color:' + cor : ''}">${sens(brlSinal(v).replace(/R\$\s?/, ''))}</span>`;
+  const lin = (n, nota, a, b, c, forte) => `<div class="ag4" style="display:grid;grid-template-columns:minmax(0,1.3fr) repeat(3,minmax(0,1fr));gap:8px;padding:10px 0;border-top:1px solid var(--line);align-items:center;font-size:13.5px"><span><span style="display:block;font-weight:${forte ? 800 : 600}">${n}</span>${nota ? `<span class="muted" style="font-size:11.5px">${nota}</span>` : ''}</span>${a}${b}${c}</div>`;
+  const tabela = `<div class="cartao">
+      <h2 style="font-size:15px;font-weight:800">Planejado × previsto × real <span class="muted" style="font-size:12px;font-weight:600">(R$)</span></h2>
+      <div style="display:grid;grid-template-columns:minmax(0,1.3fr) repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;font-size:11.5px;color:var(--muted);font-weight:700;text-align:right"><span></span><span>Planejado</span><span>Previsto</span><span>Real</span></div>
+      ${lin('Entradas', 'fixas de renda', cel(pl.renda), cel(res.entradasPrev), cel(res.entradas, false, 'var(--receita)'))}
+      ${lin('Gastos', 'metas + fixas', cel(-pl.gastos), cel(-res.gastosPrev), cel(-res.gastos))}
+      ${lin('Sobra', '', cel(pl.sobra, true), cel(res.sobraPrev, true, res.sobraPrev < 0 ? 'var(--despesa)' : ''), cel(res.sobraReal, true), true)}
+      <p class="muted" style="font-size:12px;margin-top:10px">Previsto = o que já foi lançado + contas fixas que ainda vão entrar ou sair + o que as metas ainda reservam. Real = só o que já foi lançado.</p>
+    </div>`;
+
+  // barra do mês: real, previstos, reservado nas metas e a marca do planejado
+  const escala = Math.max(res.gastosPrev, pl.gastos, 1);
+  const w = (v) => Math.max(0, Math.min(100, (v / escala) * 100)).toFixed(2) + '%';
+  const hoje = hojeISO();
+  const [a, mm] = mes.split('-').map(Number);
+  const diasMes = new Date(Date.UTC(a, mm, 0)).getUTCDate();
+  const diaHoje = mesDe(hoje) === mes ? Number(hoje.slice(8, 10)) : mes < mesDe(hoje) ? diasMes : 0;
+  const barra = `<div class="cartao">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h2 style="font-size:15px;font-weight:800">Gastos do mês</h2><span class="muted" style="font-size:12.5px">${diaHoje && diaHoje < diasMes ? 'dia ' + diaHoje + ' de ' + diasMes : diaHoje ? 'mês encerrado' : 'mês ainda não começou'}</span></div>
+      <div style="position:relative;margin-top:14px">
+        <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;background:var(--surf2)">
+          <span style="width:${w(res.gastos)};background:var(--accent)"></span>
+          <span style="width:${w(res.previstos)};background:repeating-linear-gradient(45deg,var(--aviso) 0 4px,transparent 4px 8px)"></span>
+          <span style="width:${w(res.reserva)};background:var(--soft);opacity:.45"></span>
+        </div>
+        ${pl.gastos ? `<span title="Planejado" style="position:absolute;top:-4px;bottom:-4px;left:${w(pl.gastos)};width:2px;background:var(--text)"></span>` : ''}
+        ${diaHoje && diaHoje < diasMes ? `<span title="Hoje" style="position:absolute;top:20px;left:${((diaHoje / diasMes) * 100).toFixed(1)}%;transform:translateX(-50%);font-size:10px;color:var(--muted)">▲ hoje</span>` : ''}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:${diaHoje && diaHoje < diasMes ? 24 : 12}px;font-size:12.5px">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--accent);margin-right:5px"></span>Lançado ${sens(brl(res.gastos))}</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:repeating-linear-gradient(45deg,var(--aviso) 0 3px,transparent 3px 6px);margin-right:5px"></span>Contas fixas e futuros ${sens(brl(res.previstos))}</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--soft);opacity:.45;margin-right:5px"></span>Reservado nas metas ${sens(brl(res.reserva))}</span>
+        ${pl.gastos ? `<span><span style="display:inline-block;width:2px;height:10px;background:var(--text);margin-right:6px"></span>Planejado ${sens(brl(pl.gastos))}</span>` : ''}
+      </div>
+    </div>`;
+
+  // metas do perfil: perfil Família vê as da Família; a pessoa vê as dela e as da Família
+  const lista = res.metas.filter((x) => R.pesoNoPerfil(db, x.dono, p, mes) > 0)
+    .sort((x, y) => (x.dono === p ? 0 : 1) - (y.dono === p ? 0 : 1) || nomeCat(db, x.meta.categoria).localeCompare(nomeCat(db, y.meta.categoria)));
+  const ordem = [];
+  lista.filter((x) => x.grupo || !lista.some((g) => g.grupo && g.dono === x.dono && g.meta.categoria === (R.porId(db.categorias, x.meta.categoria) || {}).grupo)).forEach((x) => {
+    ordem.push([x, false]);
+    if (x.grupo) lista.filter((y) => !y.grupo && y.dono === x.dono && (R.porId(db.categorias, y.meta.categoria) || {}).grupo === x.meta.categoria).forEach((y) => ordem.push([y, true]));
+  });
+  const itemMeta = ([x, sub]) => {
+    const passou = arred(x.usado - x.valor);
+    const peso = R.pesoNoPerfil(db, x.dono, p, mes);
+    return `<button class="item" data-a="editarMeta" data-id="${x.meta.id}" style="flex-direction:column;align-items:stretch;gap:8px;${sub ? 'padding-left:28px' : ''}">
+      <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;text-align:left"><span class="titulo" style="flex:1;min-width:120px">${sub ? '↳ ' : ''}${esc(nomeCat(db, x.meta.categoria))}${x.grupo ? ' <span class="muted" style="font-weight:600;font-size:12px">grupo</span>' : ''}</span>
+        ${!ehFam ? `<span class="pill ${A.classe(x.dono)}">${esc(A.nome(x.dono))}</span>` : ''}${x.meta.mes !== 'Todo mês' ? '<span class="pill neutra">só este mês</span>' : ''}</span>
+      <span style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--surf2)"><span style="width:${Math.min(100, x.pctReal * 100).toFixed(1)}%;background:${corPct(x.pct)}"></span><span style="width:${Math.max(0, Math.min(100, x.pct * 100) - Math.min(100, x.pctReal * 100)).toFixed(1)}%;background:repeating-linear-gradient(45deg,${corPct(x.pct)} 0 3px,transparent 3px 6px)"></span></span>
+      <span style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span class="muted" style="font-size:12.5px;text-align:left">${x.previsto ? sens(brl(x.real)) + ' lançados + ' + sens(brl(x.previsto)) + ' previstos · ' : ''}${passou > 0.005 ? `<strong style="color:var(--despesa)">passou ${sens(brl(passou))}</strong>` : `faltam ${sens(brl(arred(x.valor - x.usado)))}`}${peso < 1 && peso > 0 ? ' · sua parte ' + Math.round(peso * 100) + '%' : ''}</span>
+        <span style="font-weight:800;font-size:14px;white-space:nowrap">${sens(brl(x.usado))} <span class="muted" style="font-weight:600">/ ${sens(brl(x.valor))}</span></span></span>
+    </button>`;
+  };
+  const metas = `<div class="secao-titulo"><span>Metas de ${esc(nomeM)}</span><button class="link" data-a="novaMeta">${ic('mais_', 15, 'style="vertical-align:-2px"')} Nova meta</button></div>
+    <div class="lista">${ordem.length ? ordem.map(itemMeta).join('') : `<div class="vazio">Nenhuma meta em ${esc(nomeM)}. <button class="link" data-a="novaMeta">Criar meta</button></div>`}</div>
+    <p class="muted" style="font-size:12.5px;margin:8px 4px 0">A meta entra nos gastos previstos pelo que ainda falta. Cada lançamento ou conta fixa prevista na categoria toma o lugar dela, sem contar duas vezes. Meta de subcategoria fica dentro da meta do grupo.</p>`;
+
+  // contas fixas do mês
+  const prev = R.previstosDoMes(db, mes).filter((x) => !x.ehRenda && x.tipo !== R.TIPO.receita && R.pesoNoPerfil(db, x.dono, p, mes) > 0);
+  const totPrev = arred(prev.reduce((s, x) => s + x.valor * R.pesoNoPerfil(db, x.dono, p, mes), 0));
+  const fixas = `<div class="secao-titulo"><span>Contas fixas</span><a href="#/fixas">Ver todas</a></div>
+    <div class="lista">${prev.length ? prev.slice(0, 6).map((x) => `<div class="item"><span class="principal-txt"><span class="titulo">${esc(x.desc)}</span><span class="sub">${dataCurta(x.data)} · ${esc(nomeCat(db, x.categoria))}</span></span><span class="valor">${sens(brl(x.valor))}</span></div>`).join('') + (prev.length > 6 ? `<a class="item" href="#/fixas"><span class="principal-txt"><span class="sub">e mais ${prev.length - 6}</span></span>${ic('seta', 16)}</a>` : '') : `<div class="vazio">Nenhuma conta fixa falta lançar em ${esc(nomeM)}.</div>`}</div>
+    ${prev.length ? `<p class="muted" style="font-size:12.5px;margin:8px 4px 0">Faltam lançar ${prev.length} · ${sens(brl(totPrev))}${!ehFam ? ' (sua parte)' : ''}</p>` : ''}`;
+
+  const corpo = `<div class="grade"><div>${hero}<div style="margin-top:12px">${barra}</div><div style="margin-top:12px">${tabela}</div></div><div>${metas}${fixas}</div></div>`;
+  return casca(E, 'Planejamento', corpo, { acoes: seletorMes(E) });
+}
+
+export function modalMeta(E, A, m) {
+  const db = E.db, f = m.form, mes = E.mes;
+  const nomeM = nomeMesAno(mes).split(' ')[0].toLowerCase();
+  const fam = A.fam;
+  const donos = [...(fam ? [fam] : []), ...A.ps];
+  const meta = m.editando ? R.porId(db.metas || [], m.editando) : null;
+  const despesas = R.porOrdem(db, db.categorias.filter((c) => c.tipo !== 'Receita' && R.ativo(c)));
+  const grupos = despesas.filter((c) => !c.grupo);
+  const opcoes = grupos.map((g) => `<optgroup label="${esc(g.nome)}"><option value="${g.id}" ${f.categoria === g.id ? 'selected' : ''}>${esc(g.nome)} — grupo inteiro</option>${despesas.filter((c) => c.grupo === g.id).map((c) => `<option value="${c.id}" ${f.categoria === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</optgroup>`).join('');
+  let info = '';
+  if (f.categoria && f.dono) {
+    const media = R.mediaGasto(db, f.categoria, f.dono, mes);
+    const u = R.usoCategorias(db, R.escopoMeta(db, f.categoria), f.dono, mes);
+    info = `<div class="cartao" style="margin-top:12px;background:var(--bg);font-size:13.5px">
+      <div style="display:flex;justify-content:space-between;gap:8px"><span class="muted">Média dos 3 meses anteriores</span><span><strong>${brl(media)}</strong>${media > 0 ? ` <button class="link" data-a="metaUsarMedia" data-v="${media}">usar</button>` : ''}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px"><span class="muted">Em ${esc(nomeM)} até agora</span><strong>${brl(u.real)}${u.previsto ? ' + ' + brl(u.previsto) + ' previstos' : ''}</strong></div></div>`;
+  }
+  const fixo = !!meta; // editando: categoria e dono ficam como estão
+  const corpo = `
+    <div class="campo"><span>De quem é</span>${fixo ? `<div><span class="pill ${A.classe(f.dono)}">${esc(A.nome(f.dono))}</span></div>` : `<div class="donos" role="radiogroup">${donos.map((p) => `<button role="radio" class="${A.classe(p.id)}" aria-checked="${f.dono === p.id}" data-a="metaDono" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>`}
+      <span class="muted" style="font-size:12px;margin-top:4px">${f.dono && fam && f.dono === fam.id ? 'Gastos da casa, pagos por qualquer um.' : 'Só os gastos pessoais desta pessoa.'}</span></div>
+    <label class="campo"><span>Categoria</span>${fixo ? `<strong>${esc(nomeCat(db, f.categoria))}${R.ehGrupo(db, f.categoria) ? ' (grupo inteiro)' : ''}</strong>` : `<select class="entrada" data-campo="categoria"><option value="">Escolha…</option>${opcoes}</select>`}</label>
+    <label class="campo"><span>Limite no mês (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
+    ${info}
+    ${fixo ? `<p class="muted" style="font-size:12.5px;margin-top:12px">${meta.mes === 'Todo mês' ? 'Vale todo mês' + (meta.desde ? ' desde ' + nomeMesAno(meta.desde).toLowerCase() : '') + '. Ao salvar, você escolhe se a mudança vale só para ' + esc(nomeM) + ' ou daqui em diante.' : 'Vale só em ' + esc(nomeM) + '.'}</p>`
+    : `<div class="campo"><span>Vale</span><div class="chips"><button class="chip" aria-pressed="${f.vale !== 'mes'}" data-a="metaVale" data-v="todo">Todo mês, a partir de ${esc(nomeM)}</button><button class="chip" aria-pressed="${f.vale === 'mes'}" data-a="metaVale" data-v="mes">Só em ${esc(nomeM)}</button></div></div>`}
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMeta" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : fixo ? 'Salvar alteração' : 'Criar meta'}</button>
+    ${fixo ? `<button class="btn btn-perigo btn-largo" style="margin-top:8px" data-a="excluirMeta">${ic('lixo', 18)}Excluir meta</button>` : ''}`;
+  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Meta"><div class="alca"></div><h2>${fixo ? 'Editar meta' : 'Nova meta'}</h2>${corpo}</div>`;
+}

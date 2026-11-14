@@ -6,7 +6,7 @@ import * as R from './regras.js';
 import * as T from './telas.js';
 import * as T2 from './telas2.js';
 import * as I from './invest.js';
-import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero, dataNoMes } from './util.js';
+import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero, dataNoMes, esc } from './util.js';
 
 const LS = {
   get: (k, d = null) => { try { const v = localStorage.getItem('economiau-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -38,7 +38,7 @@ function desenhar() {
   else if (E.fase === 'erro') html = T.telaErro(E);
   else if (E.rota === 'perfis' || !E.perfil) html = T.telaPerfis(E);
   else {
-    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias, tags: T.telaTags };
+    const telas = { inicio: T.telaInicio, transacoes: T.telaTransacoes, acerto: T.telaAcerto, mais: T.telaMais, contas: T.telaContas, rendas: T.telaRendas, faturas: T.telaFaturas, primeiro: T.telaPrimeiro, fixas: T.telaFixas, conferencia: T2.telaConferencia, investimentos: T2.telaInvestimentos, categorias: T.telaCategorias, tags: T.telaTags, planejamento: T2.telaPlanejamento };
     html = (telas[E.rota] || T.telaInicio)(E) + T.modal(E);
   }
   raiz.innerHTML = html + T.toast(E);
@@ -590,6 +590,95 @@ const A = {
     E.modal = { tipo: 'mov', form: { foraAcerto: false, investimento: i.id, tipo: d.v, valor: '', data: hojeISO(), conta: primeiraConta(ehFamilia(i.titular) ? eu() : i.titular) } };
     desenhar();
   },
+  // ---------------------------------------------------------------- metas
+  novaMeta() {
+    const f = fam();
+    E.modal = { tipo: 'meta', form: { dono: E.perfil || (f && f.id), categoria: '', valor: '', vale: 'todo' } }; E.modalPai = null;
+    desenhar();
+  },
+  editarMeta(d) {
+    const m = R.porId(E.db.metas || [], d.id);
+    if (!m) return;
+    E.modal = { tipo: 'meta', editando: m.id, form: { dono: R.donoMeta(E.db, m), categoria: m.categoria, valor: valorTxt(m.valor), vale: m.mes === 'Todo mês' ? 'todo' : 'mes' } }; E.modalPai = null;
+    desenhar();
+  },
+  metaDono(d) { E.modal.form.dono = d.id; desenhar(); },
+  metaVale(d) { E.modal.form.vale = d.v; desenhar(); },
+  metaUsarMedia(d) { E.modal.form.valor = valorTxt(Number(d.v)); desenhar(); },
+  async salvarMeta() {
+    const m = E.modal, f = m.form;
+    const valor = arred(lerValor(f.valor));
+    if (!f.categoria) return avisar('Escolha a categoria.', true);
+    if (!(valor > 0)) return avisar('Digite o limite da meta.', true);
+    const mes = E.mes;
+    if (!m.editando) {
+      const ja = R.metasDoMes(E.db, mes).find((x) => R.donoMeta(E.db, x) === f.dono && x.categoria === f.categoria);
+      if (ja) return avisar('Já existe uma meta para essa categoria em ' + nomeMesAno(mes).toLowerCase() + '. Toque nela para alterar.', true);
+      const nova = { mes: f.vale === 'mes' ? mes : 'Todo mês', categoria: f.categoria, dono: f.dono, valor, status: 'Ativo', ...camposMeta(f.vale === 'mes' ? {} : { desde: mes, avisar: 'Sim' }) };
+      const ok = await salvar(() => E.banco.inserir('metas', [nova]));
+      if (ok) { E.modal = null; avisar('Meta criada.'); }
+      return;
+    }
+    const meta = R.porId(E.db.metas, m.editando);
+    if (meta.mes !== 'Todo mês') {
+      const ok = await salvar(() => E.banco.atualizar('metas', [{ id: meta.id, valor }]));
+      if (ok) { E.modal = null; avisar('Meta alterada.'); }
+      return;
+    }
+    // meta de todo mês: só este mês ou daqui em diante
+    E.modalPai = E.modal;
+    E.modal = { tipo: 'confirmar', titulo: 'Alterar a meta', alvo: { id: meta.id, valor }, texto: `De ${brl(meta.valor)} para <strong>${brl(valor)}</strong>. Vale para quais meses?`, opcoes: [['metaSoEsteMes', 'Só ' + nomeMesAno(mes).toLowerCase()], ['metaDaquiEmDiante', 'De ' + nomeMesAno(mes).toLowerCase() + ' em diante']] };
+    desenhar();
+  },
+  async metaSoEsteMes() {
+    const { id, valor, excluir } = E.modal.alvo;
+    const meta = R.porId(E.db.metas, id);
+    const mes = E.mes;
+    const ja = (E.db.metas || []).find((x) => x.mes === mes && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria);
+    const ok = await salvar(async () => {
+      if (ja) await E.banco.atualizar('metas', [{ id: ja.id, valor: excluir ? ja.valor : valor, status: excluir ? 'Arquivado' : 'Ativo' }]);
+      else await E.banco.inserir('metas', [{ mes, categoria: meta.categoria, dono: meta.dono, valor: excluir ? meta.valor : valor, status: excluir ? 'Arquivado' : 'Ativo' }]);
+    });
+    if (ok) { E.modal = null; E.modalPai = null; avisar(excluir ? 'Meta tirada de ' + nomeMesAno(mes).toLowerCase() + '.' : 'Meta alterada só em ' + nomeMesAno(mes).toLowerCase() + '.'); }
+  },
+  async metaDaquiEmDiante() {
+    const { id, valor, excluir } = E.modal.alvo;
+    const meta = R.porId(E.db.metas, id);
+    const mes = E.mes;
+    const antes = somaMes(mes, -1);
+    const comecaAqui = meta.desde && meta.desde >= mes;
+    // ajustes "só este mês" de meses seguintes deixam de valer quando a meta é excluída
+    const depois = excluir ? (E.db.metas || []).filter((x) => x.mes !== 'Todo mês' && x.mes >= mes && R.ativo(x) && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria) : [];
+    const ok = await salvar(async () => {
+      if (excluir) await E.banco.atualizar('metas', [comecaAqui ? { id: meta.id, status: 'Arquivado' } : { id: meta.id, ...camposMeta({ ate: antes }) }, ...depois.map((x) => ({ id: x.id, status: 'Arquivado' }))]);
+      else if (comecaAqui) await E.banco.atualizar('metas', [{ id: meta.id, valor }, ...ajusteDoMes(meta, mes, valor)]);
+      else {
+        await E.banco.atualizar('metas', [{ id: meta.id, ...camposMeta({ ate: antes }) }, ...ajusteDoMes(meta, mes, valor)]);
+        await E.banco.inserir('metas', [{ mes: 'Todo mês', categoria: meta.categoria, dono: meta.dono, valor, status: 'Ativo', ...camposMeta({ desde: mes, ate: meta.ate || '', avisar: meta.avisar || 'Sim' }) }]);
+      }
+    });
+    if (ok) { E.modal = null; E.modalPai = null; avisar(excluir ? 'Meta encerrada a partir de ' + nomeMesAno(mes).toLowerCase() + '.' : 'Meta alterada daqui em diante.'); }
+  },
+  excluirMeta() {
+    const meta = R.porId(E.db.metas, E.modal.editando);
+    const mes = E.mes;
+    E.modalPai = E.modal;
+    if (meta.mes !== 'Todo mês') {
+      E.modal = { tipo: 'confirmar', titulo: 'Excluir meta?', alvo: { id: meta.id }, texto: `A meta de ${esc(nomeCatMeta(meta))} em ${nomeMesAno(mes).toLowerCase()} sai do planejamento.`, opcoes: [['confirmarExcluirMeta', 'Excluir', true]] };
+    } else {
+      E.modal = { tipo: 'confirmar', titulo: 'Excluir meta?', alvo: { id: meta.id, excluir: true }, texto: `A meta de ${esc(nomeCatMeta(meta))} vale todo mês. Tirar de quais meses?`, opcoes: [['metaSoEsteMes', 'Só de ' + nomeMesAno(mes).toLowerCase(), true], ['metaDaquiEmDiante', 'De ' + nomeMesAno(mes).toLowerCase() + ' em diante', true]] };
+    }
+    desenhar();
+  },
+  async confirmarExcluirMeta() {
+    const { id } = E.modal.alvo;
+    const meta = R.porId(E.db.metas, id);
+    // ajuste de um mês de uma meta "todo mês": fica arquivado (sem meta naquele mês)
+    const temBase = (E.db.metas || []).some((x) => x.mes === 'Todo mês' && R.ativo(x) && (!x.desde || x.desde <= meta.mes) && (!x.ate || meta.mes <= x.ate) && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria);
+    const ok = await salvar(() => (temBase ? E.banco.atualizar('metas', [{ id, status: 'Arquivado' }]) : E.banco.excluir('metas', [id])));
+    if (ok) { E.modal = null; E.modalPai = null; avisar('Meta excluída.'); }
+  },
+
   // editar aporte/resgate (pelo detalhe do investimento ou tocando em Transações)
   editarMov(d) {
     const mv = R.porId(E.db.movsInv || [], d.id);
@@ -921,6 +1010,16 @@ const A = {
 
 // ------------------------------------------------------- gravações
 // "Fora do acerto" de um aporte/resgate: só quando a planilha tem a coluna e a Família está envolvida
+// colunas das metas que só existem na planilha 1.5 em diante
+function camposMeta(o) {
+  const out = {};
+  Object.entries(o).forEach(([k, v]) => { if (E.banco.temCampo('metas', k)) out[k] = v; });
+  return out;
+}
+// ajuste "só este mês" já feito no mês: acompanha a mudança daqui em diante
+const ajusteDoMes = (meta, mes, valor) => (E.db.metas || []).filter((x) => x.mes === mes && R.ativo(x) && R.donoMeta(E.db, x) === R.donoMeta(E.db, meta) && x.categoria === meta.categoria).map((x) => ({ id: x.id, valor }));
+const nomeCatMeta = (m) => { const c = R.porId(E.db.categorias, m.categoria); return c ? c.nome : 'categoria'; };
+
 function formEditarMov(mv, voltarInv) {
   const liq = mv.tipo === 'Resgate' && Number(mv.liquido) > 0 ? Number(mv.liquido) : Number(mv.valor);
   return { tipo: 'mov', editando: mv.id, voltarInv, form: { investimento: mv.investimento, tipo: mv.tipo, valor: valorTxt(liq), data: mv.data, conta: mv.conta || '', foraAcerto: !!mv.foraAcerto } };

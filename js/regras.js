@@ -659,3 +659,158 @@ export function faturasComMesErrado(db) {
     .filter((x) => x.mesRenda !== x.f.mesRenda || x.competencia !== x.f.competencia)
     .map((x) => ({ id: x.f.id, mesRenda: x.mesRenda, competencia: x.competencia }));
 }
+
+// ------------------------------------------------------------------ metas
+// Uma meta vale para um grupo inteiro ou uma subcategoria, de uma pessoa ou
+// da Família. "Todo mês" vale de "A partir de" até "Até"; uma linha com o
+// mês (AAAA-MM) vale só nele e substitui a "Todo mês" da mesma categoria e
+// dono naquele mês (arquivada = sem meta naquele mês).
+export const donoMeta = (db, m) => m.dono || (familia(db) || {}).id || '';
+const chaveMeta = (db, m) => donoMeta(db, m) + '|' + m.categoria;
+const valeTodoMes = (m, mes) => m.mes === 'Todo mês' && ativo(m) && (!m.desde || m.desde <= mes) && (!m.ate || mes <= m.ate);
+
+export function metasDoMes(db, mes) {
+  const metas = db.metas || [];
+  const porChave = new Map();
+  metas.filter((m) => m.mes === mes).forEach((m) => porChave.set(chaveMeta(db, m), m)); // a última linha do mês vale
+  metas.filter((m) => valeTodoMes(m, mes)).sort((a, b) => String(a.desde || '').localeCompare(String(b.desde || ''))).forEach((m) => {
+    const k = chaveMeta(db, m);
+    const atual = porChave.get(k);
+    if (!atual || (atual.mes === 'Todo mês')) porChave.set(k, m); // a "Todo mês" mais recente
+  });
+  return [...porChave.values()].filter((m) => ativo(m) && porId(db.categorias, m.categoria));
+}
+
+// Categorias que a meta acompanha: a própria e, se for um grupo, as subcategorias dele
+export function escopoMeta(db, catId) {
+  const s = new Set([catId]);
+  db.categorias.forEach((c) => { if (c.grupo === catId) s.add(c.id); });
+  return s;
+}
+export const ehGrupo = (db, catId) => { const c = porId(db.categorias, catId); return !!c && !c.grupo && c.tipo !== 'Receita'; };
+
+// Gasto real (confirmado) e previsto (contas fixas e lançamentos futuros) do dono nas categorias, no mês
+export function usoCategorias(db, cats, dono, mes, dbp) {
+  dbp = dbp || comPrevistos(db, mes);
+  let real = 0, previsto = 0;
+  dbp.transacoes.forEach((t) => {
+    if (!ehGasto(t) || t.dono !== dono || !cats.has(t.categoria)) return;
+    if (mesCompetencia(dbp, t) !== mes) return;
+    const v = t.tipo === TIPO.estorno ? -t.valor : t.valor;
+    if (confirmado(t)) real += v; else previsto += v;
+  });
+  return { real: arred(real), previsto: arred(previsto) };
+}
+
+// Situação de cada meta do mês. "reserva" = o que a meta ainda espera gastar
+// além do real e dos previstos (nunca negativa). Meta de grupo desconta as
+// reservas das metas de subcategorias dele, para não contar duas vezes.
+export function situacaoMetas(db, mes) {
+  const dbp = comPrevistos(db, mes);
+  const lista = metasDoMes(db, mes).map((m) => {
+    const dono = donoMeta(db, m);
+    const u = usoCategorias(db, escopoMeta(db, m.categoria), dono, mes, dbp);
+    return { meta: m, dono, grupo: ehGrupo(db, m.categoria), valor: arred(m.valor), real: u.real, previsto: u.previsto, reserva: 0 };
+  });
+  lista.filter((x) => !x.grupo).forEach((x) => { x.reserva = arred(Math.max(0, x.valor - x.real - x.previsto)); });
+  lista.filter((x) => x.grupo).forEach((x) => {
+    const subs = lista.filter((y) => !y.grupo && y.dono === x.dono && (porId(db.categorias, y.meta.categoria) || {}).grupo === x.meta.categoria);
+    const jaReservado = subs.reduce((s, y) => s + y.reserva, 0);
+    x.reserva = arred(Math.max(0, x.valor - x.real - x.previsto - jaReservado));
+    x.subs = subs;
+  });
+  lista.forEach((x) => { x.usado = arred(x.real + x.previsto); x.pct = x.valor > 0 ? x.usado / x.valor : 0; x.pctReal = x.valor > 0 ? x.real / x.valor : 0; });
+  return lista;
+}
+
+// Peso de um dono de meta no perfil: perfil Família vê só as da Família;
+// a pessoa vê as dela inteiras e as da Família pela parte dela.
+export function pesoNoPerfil(db, dono, perfilId, mes) {
+  const fam = familia(db);
+  if (fam && perfilId === fam.id) return dono === fam.id ? 1 : 0;
+  if (dono === perfilId) return 1;
+  if (fam && dono === fam.id) return fracoesFamilia(db, mes)[perfilId] || 0;
+  return 0;
+}
+
+// O que as metas ainda reservam no mês para o perfil (entra nos gastos previstos)
+export function reservaDasMetas(db, perfilId, mes, sit) {
+  sit = sit || situacaoMetas(db, mes);
+  return arred(sit.reduce((s, x) => s + x.reserva * pesoNoPerfil(db, x.dono, perfilId, mes), 0));
+}
+
+// Média do gasto real nas categorias nos 3 meses anteriores (só meses com algum lançamento)
+export function mediaGasto(db, catId, dono, mes, n = 3) {
+  const cats = escopoMeta(db, catId);
+  const vals = [];
+  for (let k = 1; k <= n; k++) {
+    const m = somaMes(mes, -k);
+    const temDados = db.transacoes.some((t) => ehGasto(t) && confirmado(t) && mesCompetencia(db, t) === m);
+    if (!temDados) continue;
+    vals.push(usoCategorias(db, cats, dono, m, db).real);
+  }
+  return vals.length ? arred(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+}
+
+// --------------------------------------------------------------- planejamento
+// Entradas previstas que ainda não chegaram (contas fixas de renda/receita)
+export function entradasPrevistas(db, perfilId, mes) {
+  const fam = familia(db);
+  const ehFam = fam && perfilId === fam.id;
+  return arred(previstosDoMes(db, mes).reduce((s, p) => {
+    if (p.ehRenda) return s + (ehFam || p.pessoa === perfilId ? p.valor : 0);
+    if (p.tipo !== TIPO.receita) return s;
+    if (ehFam) return s + (p.dono === fam.id ? p.valor : 0);
+    return s + parteNaReceita(db, p, perfilId);
+  }, 0));
+}
+
+// Resumo do mês de um perfil: entradas, gastos (reais, com previstos e com o
+// que as metas ainda reservam) e sobra. Aportes contam como gasto e
+// resgates como entrada (v1.11).
+export function resumoDoMes(db, perfilId, mes) {
+  const fam = familia(db);
+  const ehFam = fam && perfilId === fam.id;
+  const inv = investimentosDoMes(db, perfilId, mes);
+  const dbp = comPrevistos(db, mes);
+  let entradas;
+  if (ehFam) entradas = Object.values(rendaDoMes(db, mes)).reduce((a, b) => a + b, 0) + receitasDaFamilia(db, mes);
+  else entradas = entradasDoMes(db, mes, perfilId).total;
+  entradas = arred(entradas + inv.resgates);
+  const entPrev = entradasPrevistas(db, perfilId, mes);
+  const gastos = arred(gastosDoPerfil(db, perfilId, mes) + inv.aportes);
+  const comPrev = arred(gastosDoPerfil(dbp, perfilId, mes, true) + inv.aportes);
+  const sit = situacaoMetas(db, mes);
+  const reserva = reservaDasMetas(db, perfilId, mes, sit);
+  const gastosPrev = arred(comPrev + reserva);
+  return { inv, entradas, entPrev, entradasPrev: arred(entradas + entPrev), gastos, previstos: arred(comPrev - gastos), reserva, gastosPrev, sobraReal: arred(entradas - gastos), sobraPrev: arred(entradas + entPrev - gastosPrev), metas: sit };
+}
+
+// O planejado do mês: renda = contas fixas de renda/receita; gastos = metas
+// + contas fixas de categorias sem meta (as de categorias com meta já estão
+// dentro dela). Meta de subcategoria fica dentro da meta do grupo.
+export function planejadoDoMes(db, perfilId, mes, sit) {
+  const fam = familia(db);
+  const ehFam = fam && perfilId === fam.id;
+  sit = sit || situacaoMetas(db, mes);
+  let renda = 0, metas = 0, fixas = 0;
+  (db.recorrencias || []).filter((r) => recorrenciaAtiva(r, mes)).forEach((r) => {
+    if (r.tipo === 'Renda') { if (ehFam || r.dono === perfilId) renda += r.valor; return; }
+    if (r.tipo === 'Receita') { renda += r.valor * (ehFam ? (r.dono === fam.id ? 1 : 0) : (r.dono === perfilId ? 1 : (fam && r.dono === fam.id ? fracoesFamilia(db, mes)[perfilId] || 0 : 0))); return; }
+    const peso = pesoNoPerfil(db, r.dono, perfilId, mes);
+    if (!peso) return;
+    const coberta = sit.some((x) => x.dono === r.dono && escopoMeta(db, x.meta.categoria).has(r.categoria));
+    if (!coberta) fixas += r.valor * peso;
+  });
+  sit.forEach((x) => {
+    const peso = pesoNoPerfil(db, x.dono, perfilId, mes);
+    if (!peso) return;
+    if (x.grupo) metas += Math.max(x.valor, (x.subs || []).reduce((s, y) => s + y.valor, 0)) * peso;
+    else {
+      const g = (porId(db.categorias, x.meta.categoria) || {}).grupo;
+      if (!sit.some((y) => y.grupo && y.dono === x.dono && y.meta.categoria === g)) metas += x.valor * peso;
+    }
+  });
+  renda = arred(renda); metas = arred(metas); fixas = arred(fixas);
+  return { renda, metas, fixas, gastos: arred(metas + fixas), sobra: arred(renda - metas - fixas) };
+}

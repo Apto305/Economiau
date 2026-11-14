@@ -196,7 +196,7 @@ export function telaPerfis(E) {
 
 // ------------------------------------------------------------- casca
 const MENU = [
-  ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes']]],
+  ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes'], ['planejamento', 'Planejamento', 'planejar']]],
   ['Fechamento do mês', [['conferencia', 'Conferência', 'ok'], ['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
   ['Patrimônio', [['investimentos', 'Investimentos', 'investir']]],
   ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['tags', 'Tags', 'etiqueta'], ['rendas', 'Rendas e divisão', 'rendas']]],
@@ -217,8 +217,8 @@ export function casca(E, titulo, corpo, opcoes = {}) {
     <a href="#/inicio" ${rota === 'inicio' ? 'aria-current="page"' : ''}>${ic('inicio', 22)}Início</a>
     <a href="#/transacoes" ${rota === 'transacoes' ? 'aria-current="page"' : ''}>${ic('transacoes', 22)}Transações</a>
     <button class="mais-btn" data-a="menuLancar" aria-label="Novo lançamento">${ic('mais_', 26)}</button>
-    <a href="#/acerto" ${rota === 'acerto' ? 'aria-current="page"' : ''}>${ic('acerto', 22)}Acerto</a>
-    <a href="#/mais" ${['mais', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias', 'tags'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
+    <a href="#/planejamento" ${rota === 'planejamento' ? 'aria-current="page"' : ''}>${ic('planejar', 22)}Planejar</a>
+    <a href="#/mais" ${['mais', 'acerto', 'contas', 'rendas', 'faturas', 'fixas', 'conferencia', 'investimentos', 'categorias', 'tags'].includes(rota) ? 'aria-current="page"' : ''}>${ic('mais', 22)}Mais</a>
   </nav>`;
   const voltar = opcoes.voltar ? `<a class="icone-btn so-cel" href="#/${opcoes.voltar}" aria-label="Voltar">${ic('voltar', 22)}</a>` : '';
   let banner = E.sessaoExpirada ? `<div class="banner">${ic('aviso', 18)}<span>A sessão do Google expirou.</span><button class="btn btn-peq btn-sec" data-a="renovar">Continuar</button></div>` : '';
@@ -246,10 +246,10 @@ export function telaInicio(E) {
   const db = E.db, mes = E.mes, p = E.perfil, fam = A.fam;
   const ehFam = fam && p === fam.id;
   const nomeM = nomeMesAno(mes).split(' ')[0].toLowerCase();
-  const dbp = R.comPrevistos(db, mes);
-  const inv = R.investimentosDoMes(db, p, mes);
-  const gastos = arred(R.gastosDoPerfil(db, p, mes) + inv.aportes);
-  const previstos = arred(R.gastosDoPerfil(dbp, p, mes, true) + inv.aportes);
+  const res = R.resumoDoMes(db, p, mes);
+  const inv = res.inv;
+  const gastos = res.gastos;
+  const previstos = res.gastosPrev; // com previstos e o que as metas ainda reservam
   const ac = R.acertoDoMes(db, mes);
   const renda = R.rendaDoMes(db, mes);
   const ent = ehFam ? null : R.entradasDoMes(db, mes, p);
@@ -263,13 +263,14 @@ export function telaInicio(E) {
   const cartoes = db.cartoes.filter((c) => R.ativo(c) && (ehFam || c.dono === p || R.pagaPorDe(db, c) === p));
   const itens = filtrar({ ...E, filtros: FILTROS_PADRAO }, A, itensDoMes(E, A, mes)).filter((x) => !x.t.virtual).slice(0, 6);
   const fr = R.fracoesRenda(db, mes).fracoes;
-  const sobra = rendaPerfil - previstos;
+  const sobra = res.sobraPrev;
+  const prevTxt = previstos > gastos ? 'com previstos' + (res.reserva ? ' e metas' : '') + ' ' + sens(brl(previstos)) : '';
 
   const kpis = `<div class="kpis">
-    <div class="kpi"><div class="r">${ehFam ? 'Gastos da família' : 'Seus gastos'}</div><div class="v">${sens(brl(gastos))}</div><div class="s">${previstos > gastos ? 'com previstos ' + sens(brl(previstos)) : ehFam ? 'no mês' : 'pessoais + sua parte na família'}${invTxt(inv.aportes, 'aportes')}</div></div>
+    <div class="kpi"><div class="r">${ehFam ? 'Gastos da família' : 'Seus gastos'}</div><div class="v">${sens(brl(gastos))}</div><div class="s">${prevTxt || (ehFam ? 'no mês' : 'pessoais + sua parte na família')}${invTxt(inv.aportes, 'aportes')}</div></div>
     <div class="kpi"><div class="r">${ehFam ? 'Renda da família' : 'Suas entradas'}</div><div class="v rec">${sens(brl(rendaPerfil))}</div><div class="s">${rendaPerfil ? (ehFam ? 'rendas · ' + A.ps.map((x) => A.nome(x.id) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ') + outrasTxt : (outrasTxt ? sens(brl(ent.divisao)) + ' na divisão (' + Math.round((fr[p] || 0) * 100) + '%) + ' + outrasTxt : 'divisão ' + Math.round((fr[p] || 0) * 100) + '%')) + invTxt(inv.resgates, 'resgates') : 'nenhuma entrada lançada em ' + nomeM}</div></div>
     <div class="kpi"><div class="r">${ehFam ? 'Em todas as contas' : 'Nas suas contas'}</div><div class="v">${sens(brl(saldoTotal))}</div><div class="s">${contas.length} conta${contas.length === 1 ? '' : 's'}</div></div>
-    <div class="kpi"><div class="r">Sobra do mês</div><div class="v ${sobra < 0 ? 'desp' : ''}">${sens(brlSinal(arred(sobra)))}</div><div class="s">${rendaPerfil ? 'renda ' + sens(brl(rendaPerfil)) + ' − gastos ' + sens(brl(previstos)) : (ehFam ? 'lance a renda de ' : 'lance as entradas de ') + nomeM + ' para calcular'}</div></div>
+    <div class="kpi"><div class="r">Sobra do mês</div><div class="v ${sobra < 0 ? 'desp' : ''}">${sens(brlSinal(arred(sobra)))}</div><div class="s">${res.entradasPrev ? 'entradas ' + sens(brl(res.entradasPrev)) + (res.entPrev ? ' (com previstas)' : '') + ' − gastos ' + sens(brl(previstos)) + (res.reserva ? ' · metas ainda reservam ' + sens(brl(res.reserva)) : '') : (ehFam ? 'lance a renda de ' : 'lance as entradas de ') + nomeM + ' para calcular'}</div></div>
   </div>`;
 
   const acertoCard = (() => {
@@ -672,7 +673,7 @@ export function modal(E) {
   const m = E.modal;
   if (!m) return '';
   const A = apoio(E);
-  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, tag: modalTag, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov, ajusteInv: T2.modalAjusteInv }[m.tipo];
+  const fn = { lancar: modalLancar, detalhe: modalDetalhe, seletor: modalSeletor, conta: modalConta, cartao: modalCartao, renda: modalRenda, confirmar: modalConfirmar, fechamento: modalFechamento, menu: modalMenu, filtros: modalFiltros, fixa: modalFixa, categoria: modalCategoria, tag: modalTag, invest: T2.modalInvest, investForm: T2.modalInvestForm, mov: T2.modalMov, ajusteInv: T2.modalAjusteInv, meta: T2.modalMeta }[m.tipo];
   return fn ? fn(E, A, m) : '';
 }
 
