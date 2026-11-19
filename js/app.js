@@ -46,12 +46,29 @@ function desenhar() {
   }
   raiz.innerHTML = html + T.toast(E);
   document.querySelectorAll('.auto-altura').forEach(ajustarAltura);
+  encaixarGrade();
   [...document.querySelectorAll('.rolar, .folha')].forEach((el, i) => { if (rolagens[i]) el.scrollTop = rolagens[i]; });
   window.scrollTo(0, y);
   if (foco) {
     const el = document.querySelector('[data-campo="' + foco + '"]');
     if (el) { el.focus(); if (el.setSelectionRange && el.type !== 'date' && el.type !== 'number') { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (e) { /* tipo sem cursor */ } } }
   }
+}
+
+// Início no computador: cada bloco ocupa só a altura que precisa (encaixe em
+// mosaico). A grade usa linhas de 4 px e cada bloco pede quantas linhas cabe nele.
+const LINHA_GRADE = 4, VAO_GRADE = 16;
+let observadorGrade = null;
+function encaixarGrade() {
+  if (observadorGrade) observadorGrade.disconnect();
+  const grade = document.querySelector('.grade-inicio');
+  if (!grade || !window.ResizeObserver) return;
+  const ajustar = (bloco) => {
+    if (!window.matchMedia('(min-width: 1100px)').matches) { bloco.style.gridRowEnd = ''; return; }
+    bloco.style.gridRowEnd = 'span ' + Math.ceil((bloco.getBoundingClientRect().height + VAO_GRADE) / LINHA_GRADE);
+  };
+  observadorGrade = new ResizeObserver((itens) => itens.forEach((i) => ajustar(i.target)));
+  [...grade.children].forEach((b) => { ajustar(b); observadorGrade.observe(b); });
 }
 
 let timerToast = null;
@@ -191,7 +208,7 @@ async function carregarPlanilha(id) {
   await corrigirFaturas();
   try {
     const n = await corrigirResgates();
-    if (n) { E.db = E.banco.db; E.rev++; avisar(n === 1 ? 'Recalculei 1 resgate de investimento pela posição do dia.' : 'Recalculei ' + n + ' resgates de investimento pela posição do dia.'); }
+    if (n) { E.db = E.banco.db; E.rev++; avisar(n === 1 ? '1 resgate recalculado pela posição do dia.' : n + ' resgates recalculados pela posição do dia.'); }
   } catch (e) { /* tenta de novo na próxima abertura */ }
 }
 
@@ -220,7 +237,7 @@ async function corrigirFaturas() {
     E.db = E.banco.db; E.rev++;
     if (mudar) avisar(mudar === 1 ? 'Corrigi a fatura de 1 compra lançada com data antiga.' : 'Corrigi a fatura de ' + mudar + ' compras lançadas com data antiga.');
     else if (meses.length) avisar(meses.length === 1 ? 'Corrigi o mês de 1 fatura pela regra do cartão.' : 'Corrigi o mês de ' + meses.length + ' faturas pela regra do cartão.');
-    else if (semPaga.length) avisar('Preenchi "Paga por" nos cartões. Confira em Contas e cartões.');
+    else if (semPaga.length) avisar('“Paga por” preenchido nos cartões. Confira em Contas e cartões.');
     else if (rep.apagar.length) avisar(rep.apagar.length === 1 ? 'Juntei 1 fatura repetida.' : 'Juntei ' + rep.apagar.length + ' faturas repetidas.');
     desenhar();
   } catch (e) { tratarErro(e); }
@@ -458,7 +475,7 @@ const A = {
   },
   // ---- ordem das categorias (rascunho até "Salvar ordem")
   catOrdemIniciar() {
-    if (!E.banco.temCampo('categorias', 'ordem')) return avisar('Rode o script da planilha versão 1.13 para poder reordenar as categorias.', true);
+    if (!E.banco.temCampo('categorias', 'ordem')) return avisar('Atualize a planilha (script de montagem) para usar isto.', true);
     const tipo = E.catTipo || 'Despesa';
     const ordem = {};
     const ativas = E.db.categorias.filter((c) => c.tipo === tipo && R.ativo(c));
@@ -545,9 +562,9 @@ const A = {
   pularMes() {
     const p = R.acharPrevisto(E.db, E.modal.id);
     if (!p) return;
-    if (!E.banco.temCampo('recorrencias', 'pulados')) { avisar('Rode o script da planilha versão 1.9 para poder pular um mês.', true); return; }
+    if (!E.banco.temCampo('recorrencias', 'pulados')) { avisar('Atualize a planilha (script de montagem) para usar isto.', true); return; }
     E.modal = { tipo: 'confirmar', titulo: 'Pular este mês?', alvo: { rec: p.recorrencia, mes: mesDe(p.data) },
-      texto: `"${p.desc}" não vai aparecer como prevista em ${nomeMesAno(mesDe(p.data)).toLowerCase()}. Os outros meses continuam normalmente.`,
+      texto: `“${p.desc}” não vai aparecer como prevista em ${nomeMesAno(mesDe(p.data)).toLowerCase()}. Os outros meses continuam normalmente.`,
       opcoes: [['confirmarPular', 'Pular só este mês', true]] };
     desenhar();
   },
@@ -588,7 +605,7 @@ const A = {
     const c = R.porId(E.db.contas, d.id);
     const st = T2.estadoConta(E, c, E.mes);
     if (!st.pronta) return;
-    if (!E.banco.temCampo('confContas', 'conta')) { E.contasOk[st.chave] = true; LS.set('contasOk', E.contasOk); avisar('Conta conferida (só neste aparelho: rode o script 1.15).'); return; }
+    if (!E.banco.temCampo('confContas', 'conta')) { E.contasOk[st.chave] = true; LS.set('contasOk', E.contasOk); avisar('Conta conferida só neste aparelho. ' + 'Atualize a planilha (script de montagem) para valer nos dois.'); return; }
     const o = { conta: c.id, mes: E.mes, saldoBanco: st.banco, dataSaldo: st.dataSaldo, conferida: true };
     const ok = await salvar(() => (st.reg ? E.banco.atualizar('confContas', [{ id: st.reg.id, ...o }]) : E.banco.inserir('confContas', [o])));
     if (ok) { delete E.saldoBanco[st.chave]; avisar('Conta conferida.'); }
@@ -863,7 +880,7 @@ const A = {
     const f = formAtual();
     const alvo = arred(lerValor(f.valor));
     if (!(alvo > 0)) return avisar('Digite o valor que o banco mostra.', true);
-    if (!E.banco.temCampo('investimentos', 'valorBanco')) return avisar('Rode o script da planilha versão 1.13 primeiro.', true);
+    if (!E.banco.temCampo('investimentos', 'valorBanco')) return avisar('Atualize a planilha (script de montagem) para usar isto.', true);
     const inv = R.porId(E.db.investimentos, f.investimento);
     const C = T2.calcInvest(E);
     const hoje = hojeISO();
@@ -990,7 +1007,7 @@ const A = {
     const grupo = m.k !== 'ren' && t.grupoParc && t.totalParcelas > 1 ? E.db.transacoes.filter((x) => x.grupoParc === t.grupoParc) : null;
     E.modal = {
       tipo: 'confirmar', titulo: 'Excluir lançamento?', alvo: { k: m.k, id: m.id, grupo: grupo ? t.grupoParc : null },
-      texto: grupo ? `"${t.desc}" tem ${grupo.length} parcelas. Excluir só esta ou todas?` : `"${t.desc || 'Lançamento'}" de ${brl(t.valor)} sai da planilha. Não dá para desfazer.`,
+      texto: grupo ? `“${t.desc}” tem ${grupo.length} parcelas. Excluir só esta ou todas?` : `“${t.desc || 'Lançamento'}” de ${brl(t.valor)} sai da planilha. Não dá para desfazer.`,
       opcoes: grupo ? [['confirmarExclusao', 'Só esta parcela', true], ['confirmarExclusaoGrupo', 'Todas as ' + grupo.length + ' parcelas', true]] : [['confirmarExclusao', 'Excluir', true]],
     };
     desenhar();
@@ -1066,7 +1083,7 @@ const A = {
     if (!f.nome.trim()) return avisar('Dê um nome para o cartão.', true);
     if (!f.pagaPor || ehFamilia(f.pagaPor)) return avisar('Escolha quem paga a fatura (Demétrio ou Giovanna).', true);
     const temPagaPor = E.banco.temCampo('cartoes', 'pagaPor');
-    if (!temPagaPor) return avisar('Rode o script da planilha versão 1.11 para salvar "Paga por" no cartão.', true);
+    if (!temPagaPor) return avisar('Atualize a planilha (script de montagem) para usar isto.', true);
     const o = { nome: f.nome.trim(), dono: f.dono, pagaPor: f.pagaPor, fecha: f.fecha, vence: f.vence, rendaRef: f.rendaRef, limite: f.limite === '' ? '' : arred(lerValor(f.limite)), cor: f.cor, status: f.status || 'Ativo' };
     const antigo = f.id ? { ...R.porId(E.db.cartoes, f.id) } : null;
     let datas = [], movidas = 0;
@@ -1273,7 +1290,7 @@ async function gravarLancamento(f, valor) {
       const pago = arred(dbx.transacoes.filter((t) => t.tipo === R.TIPO.fatura && t.fatura === fat.id).reduce((s, t) => s + t.valor, 0));
       if (pago >= R.totalFatura(dbx, fat.id) - 0.005) await E.banco.atualizar('faturas', [{ id: fat.id, status: 'Paga', dataPag: f.data, pagoPor: c.dono }]);
     } else {
-      if (!E.banco.temCampo('transacoes', 'contaDestino')) throw new Error('A planilha precisa da coluna "Conta de destino (ID)". Rode o script de montagem mais novo na planilha e tente de novo.');
+      if (!E.banco.temCampo('transacoes', 'contaDestino')) throw new Error('Atualize a planilha (script de montagem) para usar isto.');
       const d = R.porId(db.contas, f.contaDestino);
       if (!d) throw new Error('Escolha a conta que recebe.');
       if (d.id === c.id) throw new Error('As contas de origem e destino são a mesma.');

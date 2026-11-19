@@ -3,7 +3,7 @@ import { esc, brl, brlSinal, dataCurta, dataBR, nomeMesAno, mesDe, lerValor, arr
 import { ic } from './icones.js';
 import * as R from './regras.js';
 import * as I from './invest.js';
-import { apoio, casca, corConta } from './telas.js';
+import { apoio, casca, corConta, topoFolha, interruptor, segmento } from './telas.js';
 
 const sens = (txt) => `<span class="valor-sens">${txt}</span>`;
 const valorTxt = (n) => (n === '' || n === null || n === undefined ? '' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -101,15 +101,15 @@ export function telaConferencia(E) {
     <div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Lançamentos conferidos</span><strong>${trnsOk} de ${trnsTot}</strong></div>${barra(trnsOk, trnsTot)}</div>
     <a class="link" href="#/acerto" style="display:inline-block;margin-top:12px">Ir para o acerto de ${esc(nomeM)}</a></div>`;
 
-  const listaFaturas = `<div class="secao-titulo"><span>Faturas que contam em ${esc(nomeM)}</span></div>
+  const listaFaturas = `<div class="secao-titulo"><h2>Faturas que contam em ${esc(nomeM)}</h2></div>
     <div class="lista">${faturas.length ? faturas.map((f) => {
       const c = A.cartao(f.cartao);
       const st = estadoFatura(db, f);
       const pill = f.conferida ? '<span class="pill ok">Conferida</span>' : st.banco !== null ? '<span class="pill aviso">Conferindo</span>' : '<span class="pill neutra">A conferir</span>';
-      return `<button class="item" data-a="abrirConfFatura" data-id="${f.id}" ${fSel && fSel.id === f.id ? 'style="background:var(--hover)"' : ''}><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0])}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">vence ${dataCurta(f.vencimento)} · ${st.marcadas} de ${st.compras.length} compras · ${sens(brl(st.total))}</span></span>${pill}</button>`;
+      return `<button class="item" data-a="abrirConfFatura" data-id="${f.id}" ${fSel && fSel.id === f.id ? 'style="background:var(--hover)"' : ''}><span class="chip-cartao" style="background:${corConta(c.cor)}"><span></span></span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">vence ${dataCurta(f.vencimento)} · ${st.marcadas} de ${st.compras.length} compras · ${sens(brl(st.total))}</span></span>${pill}</button>`;
     }).join('') : `<div class="vazio">Nenhuma fatura conta em ${esc(nomeM)}.</div>`}</div>`;
 
-  const listaContas = `<div class="secao-titulo"><span>Contas em ${esc(nomeM)}</span></div>
+  const listaContas = `<div class="secao-titulo"><h2>Contas em ${esc(nomeM)}</h2></div>
     <div class="lista">${contas.map((c) => {
       const st = estados[c.id];
       const pill = st.conferida ? '<span class="pill ok">Conferida</span>' : st.banco !== null || st.marcadas ? '<span class="pill aviso">Conferindo</span>' : '<span class="pill neutra">A conferir</span>';
@@ -120,7 +120,7 @@ export function telaConferencia(E) {
   let corpo;
   if (fSel || cSel) corpo = `<div class="grade-conf"><div class="so-pc">${resumo}${listaFaturas}${listaContas}</div><div>${painel}</div></div>`;
   else corpo = `<div class="grade-conf"><div>${resumo}${listaFaturas}${listaContas}</div><div class="so-pc">${painel}</div></div>`;
-  return casca(E, fSel || cSel ? `<span class="so-pc">Conferência</span><span class="so-cel-i">${fSel ? 'Conferir fatura' : 'Conferir conta'}</span>` : 'Conferência', corpo, { voltar: fSel || cSel ? null : 'mais', acoes: (fSel || cSel ? `<button class="icone-btn so-cel" data-a="fecharConfFatura" aria-label="Voltar para a lista">${ic('voltar', 22)}</button>` : '') + seletorMes(E) });
+  return casca(E, fSel || cSel ? `<span class="so-pc">Conferência</span><span class="so-cel-i">${fSel ? 'Conferir fatura' : 'Conferir conta'}</span>` : 'Conferência', corpo, { voltar: fSel || cSel ? null : 'mais', voltarAcao: fSel || cSel ? 'fecharConfFatura' : null, acoes: seletorMes(E) });
 }
 
 function painelConta(E, A, c, st) {
@@ -140,7 +140,7 @@ function painelConta(E, A, c, st) {
   return `<div class="cartao" style="padding:0;overflow:hidden">
     <div style="padding:16px">
       <div style="display:flex;align-items:center;gap:10px"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc((c.nome || '?')[0])}</span><div style="flex:1"><div style="font-size:17px;font-weight:800">${esc(A.nomeConta(c.id))}</div><div class="muted" style="font-size:12.5px">saldo em ${dataBR(st.dataSaldo)}${st.dataSaldo === hojeISO() ? ' (hoje)' : ' (fim do mês)'}</div></div></div>
-      ${temTab ? '' : '<div class="aviso-caixa" style="margin-top:10px">Rode o script da planilha versão 1.15 para a conferência das contas ficar salva na planilha (e valer para os dois).</div>'}
+      ${temTab ? '' : '<div class="aviso-caixa" style="margin-top:10px">Atualize a planilha (script de montagem) para usar isto.</div>'}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;align-items:end">
         <div><div class="muted" style="font-size:12px">No app</div><div style="font-size:17px;font-weight:800">${sens(brlSinal(st.app))}</div></div>
         <label><span class="muted" style="font-size:12px;display:block">No banco</span><input class="entrada" style="height:38px;font-size:15px;font-weight:800;text-align:right;padding:0 8px" inputmode="numeric" data-mascara="dinheiro" data-negativo="1" data-saldo-banco="${st.chave}" placeholder="0,00" value="${esc(E.saldoBanco[st.chave] !== undefined ? E.saldoBanco[st.chave] : st.banco === null ? '' : valorTxt(st.banco))}" ${st.conferida ? 'disabled' : ''}></label>
@@ -168,10 +168,10 @@ function painelFatura(E, A, f) {
   else if (st.dif !== null && st.dif < -0.005) dica = `No app tem ${brl(-st.dif)} a mais: confira se alguma compra foi lançada em dobro, com valor errado, ou se caiu na fatura seguinte.`;
   const rodape = f.conferida
     ? `<div class="aviso-caixa" style="background:var(--ok-bg);color:var(--ok-txt)">${ic('ok', 18)}<span>Fatura conferida. <button class="link" data-a="desconferirFatura" data-id="${f.id}">Desfazer</button></span></div>`
-    : `<button class="btn btn-pri btn-largo" data-a="concluirFatura" data-id="${f.id}" ${st.pronta ? '' : 'aria-disabled="true"'}>${st.pronta ? 'Fatura conferida' : st.banco === null ? 'Digite o total do banco' : Math.abs(st.dif) >= 0.005 ? 'Ainda há diferença' : 'Marque todas as compras'}</button>`;
+    : `<button class="btn btn-pri btn-largo" data-a="concluirFatura" data-id="${f.id}" ${st.pronta ? '' : 'aria-disabled="true"'}>${st.pronta ? 'Concluir conferência' : st.banco === null ? 'Concluir conferência' : Math.abs(st.dif) >= 0.005 ? 'Ainda há diferença' : 'Marque todas as compras'}</button>`;
   return `<div class="cartao" style="padding:0;overflow:hidden">
     <div style="padding:16px">
-      <div style="display:flex;align-items:center;gap:10px"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0])}</span><div style="flex:1"><div style="font-size:17px;font-weight:800">${esc(c.nome)}</div><div class="muted" style="font-size:12.5px">fecha ${dataBR(f.fechamento)} · vence ${dataBR(f.vencimento)}</div></div></div>
+      <div style="display:flex;align-items:center;gap:10px"><span class="chip-cartao" style="background:${corConta(c.cor)}"><span></span></span><div style="flex:1"><div style="font-size:17px;font-weight:800">${esc(c.nome)}</div><div class="muted" style="font-size:12.5px">fecha ${dataBR(f.fechamento)} · vence ${dataBR(f.vencimento)}</div></div></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;align-items:end">
         <div><div class="muted" style="font-size:12px">No app</div><div style="font-size:17px;font-weight:800">${sens(brl(st.total))}</div></div>
         <label><span class="muted" style="font-size:12px;display:block">No banco</span><input class="entrada" style="height:38px;font-size:15px;font-weight:800;text-align:right;padding:0 8px" inputmode="numeric" data-mascara="dinheiro" data-total-banco="${f.id}" placeholder="0,00" value="${esc(st.banco === null ? '' : valorTxt(st.banco))}" ${f.conferida ? 'disabled' : ''}></label>
@@ -220,7 +220,7 @@ function quando(serial) {
 // O robô da planilha roda todo dia entre 8h e 9h: busca os índices do Banco
 // Central e recalcula os investimentos. Mostra quando ele rodou pela última vez
 // e se faltam índices para as movimentações mais antigas.
-export function statusRobo(E, C) {
+export function statusRobo(E, C, curto = false) {
   const db = E.db;
   const marcas = [...(db.indices || []).map((x) => Number(x.atualizadoEm) || 0), ...(db.investimentos || []).map((i) => Number(i.calculadoEm) || 0)];
   const ult = Math.max(0, ...marcas);
@@ -234,7 +234,9 @@ export function statusRobo(E, C) {
   else if (horas <= 72) { cls = 'aviso'; titulo = 'Robô atrasado'; txt = `Última atualização ${quando(ult)}. ${comoLigar}`; }
   else { cls = 'erro'; titulo = 'Robô parado'; txt = `Última atualização ${quando(ult)}. ${comoLigar}`; }
   const cor = { ok: 'var(--receita)', aviso: 'var(--aviso, #E8B44B)', erro: 'var(--despesa)' }[cls];
-  const falta = faltaDesde ? `<div class="aviso-caixa" style="margin-top:10px">${ic('aviso', 18)}<span>Faltam os índices desde ${dataBR(faltaDesde)} (a movimentação mais antiga). Até o robô buscar, o rendimento antes de ${dataBR(C.ind.dias[0] || hojeISO())} não é contado e o valor fica abaixo do banco. O robô busca sozinho na próxima atualização; para buscar agora, execute <strong>atualizarTudo</strong> no Apps Script.</span></div>` : '';
+  // em Investimentos, uma linha; as instruções completas ficam em Configurações
+  if (curto && cls !== 'ok') txt = (ult ? `Última atualização ${quando(ult)}. ` : '') + '<a href="#/config" class="link" style="font-size:13px">Ver em Configurações</a>';
+  const falta = faltaDesde && curto ? `<div class="aviso-caixa" style="margin-top:10px">${ic('aviso', 18)}<span>Faltam índices desde ${dataBR(faltaDesde)}: o valor fica abaixo do banco até o robô buscar.</span></div>` : faltaDesde ? `<div class="aviso-caixa" style="margin-top:10px">${ic('aviso', 18)}<span>Faltam os índices desde ${dataBR(faltaDesde)} (a movimentação mais antiga). Até o robô buscar, o rendimento antes de ${dataBR(C.ind.dias[0] || hojeISO())} não é contado e o valor fica abaixo do banco. O robô busca sozinho na próxima atualização; para buscar agora, execute <strong>atualizarTudo</strong> no Apps Script.</span></div>` : '';
   return `<div class="cartao" style="margin-top:12px;display:flex;gap:12px;align-items:flex-start"><span style="width:10px;height:10px;border-radius:50%;background:${cor};margin-top:6px;flex:none${cls === 'ok' ? ';box-shadow:0 0 0 4px color-mix(in srgb, ' + cor + ' 25%, transparent)' : ''}"></span><span style="flex:1"><span style="display:block;font-weight:800">${titulo}</span><span class="muted" style="font-size:13px">${txt}</span></span></div>${falta}`;
 }
 
@@ -254,8 +256,8 @@ export function telaInvestimentos(E) {
       <div class="kpi"><div class="r">Selic</div><div class="v">${pct(ref.selicAno, 2)}</div><div class="s">ao ano</div></div>
       <div class="kpi"><div class="r">IPCA</div><div class="v">${pct(ref.ipca12, 2)}</div><div class="s">últimos ${ref.ipcaMeses} meses</div></div>
       <div class="kpi"><div class="r">Índices de</div><div class="v">${dataBR(ref.dia)}</div><div class="s">Banco Central, pelo robô da planilha</div></div>
-    </div>` : `<div class="aviso-caixa" style="margin-top:12px">${ic('aviso', 18)}<span>A aba Índices está vazia. Na planilha, rode "Atualizar índices e investimentos" (ou espere o robô diário) para o app calcular os rendimentos.</span></div>`;
-  const robo = statusRobo(E, C);
+    </div>` : `<div class="aviso-caixa" style="margin-top:12px">${ic('aviso', 18)}<span>A aba Índices está vazia. Na planilha, rode “Atualizar índices e investimentos” (ou espere o robô diário) para o app calcular os rendimentos.</span></div>`;
+  const robo = statusRobo(E, C, true);
   const item = (inv) => {
     const r = C.res[inv.id] || { liquido: 0, rendimento: 0, aplicado: 0 };
     return `<button class="item" data-a="abrirInvest" data-id="${inv.id}"><span class="principal-txt"><span class="titulo">${esc(inv.nome)}</span><span class="sub">${esc(inv.tipo || '')} · ${esc(descTaxa(inv))}${inv.vencimento ? ' · vence ' + dataBR(inv.vencimento) : ''}</span></span>
@@ -264,17 +266,16 @@ export function telaInvestimentos(E) {
   const porTitular = ehFam
     ? [...A.ps, fam].filter(Boolean).map((p) => [p, meus.filter((i) => i.titular === p.id)]).filter(([, l]) => l.length)
     : [[R.porId(db.pessoas, E.perfil), meus]];
-  const listas = porTitular.map(([p, l]) => `<div class="secao-titulo"><span>${ehFam ? (p.tipo === 'Família' ? 'Da família' : (A.classe(p.id) === 'gio' ? 'Da ' : 'Do ') + esc(p.nome)) : 'Seus investimentos'}</span><span>${sens(brl(soma(l, 'liquido')))}</span></div><div class="lista">${l.length ? l.map(item).join('') : '<div class="vazio">Nenhum investimento ainda.</div>'}</div>`).join('');
-  const famBloco = daFamilia.length ? `<div class="secao-titulo"><span>Da família (não entram no seu total)</span><span>${sens(brl(soma(daFamilia, 'liquido')))}</span></div><div class="lista">${daFamilia.map(item).join('')}</div>` : '';
+  const listas = porTitular.map(([p, l]) => `<div class="secao-titulo"><h2>${ehFam ? (p.tipo === 'Família' ? 'Da família' : (A.classe(p.id) === 'gio' ? 'Da ' : 'Do ') + esc(p.nome)) : 'Seus investimentos'}</h2><span>${sens(brl(soma(l, 'liquido')))}</span></div><div class="lista">${l.length ? l.map(item).join('') : '<div class="vazio">Nenhum investimento ainda.</div>'}</div>`).join('');
+  const famBloco = daFamilia.length ? `<div class="secao-titulo"><h2>Da família (não entram no seu total)</h2><span>${sens(brl(soma(daFamilia, 'liquido')))}</span></div><div class="lista">${daFamilia.map(item).join('')}</div>` : '';
   const encerrados = (db.investimentos || []).filter((i) => !R.ativo(i) && (ehFam || i.titular === E.perfil));
-  const corpo = `<div class="cartao"><div class="muted" style="font-size:13px">${ehFam ? 'Total investido (líquido)' : 'Seu total investido (líquido)'}</div>
+  const corpo = `<div class="criar"><button class="btn btn-sec btn-peq" data-a="novoInvest">${ic('mais_', 16)}Novo investimento</button></div>
+    <div class="cartao"><div class="muted" style="font-size:13px">${ehFam ? 'Total investido, líquido de IR' : 'Seu total investido, líquido de IR'}</div>
       <div class="resumo-grande">${sens(brl(soma(meus, 'liquido')))}</div>
-      <div class="muted" style="font-size:13px;margin-top:2px">aplicado ${sens(brl(soma(meus, 'aplicado')))} · rendeu ${sens(brl(soma(meus, 'rendimento')))} · IR e IOF estimados ${sens(brl(soma(meus, 'ir') + soma(meus, 'iof')))}</div>
-      <p class="muted" style="font-size:12px;margin-top:8px">Valor líquido = o que cairia na conta se resgatasse tudo hoje.</p></div>
+      <div class="muted" style="font-size:13px;margin-top:2px">aplicado ${sens(brl(soma(meus, 'aplicado')))} · rendeu ${sens(brl(soma(meus, 'rendimento')))} · IR e IOF estimados ${sens(brl(soma(meus, 'ir') + soma(meus, 'iof')))}</div></div>
     ${robo}${indices}
-    <button class="btn btn-pri btn-largo" style="margin-top:12px" data-a="novoInvest">${ic('mais_', 18)}Novo investimento</button>
     <div class="grade"><div>${listas}</div>${famBloco ? `<div>${famBloco}</div>` : ''}</div>
-    ${encerrados.length ? `<div class="secao-titulo"><span>Resgatados ou arquivados</span></div><div class="lista">${encerrados.map((i) => `<button class="item" style="opacity:.6" data-a="abrirInvest" data-id="${i.id}"><span class="principal-txt"><span class="titulo">${esc(i.nome)}</span><span class="sub">${esc(i.tipo || '')}</span></span></button>`).join('')}</div>` : ''}`;
+    ${encerrados.length ? `<div class="secao-titulo"><h2>Resgatados ou arquivados</h2></div><div class="lista">${encerrados.map((i) => `<button class="item" style="opacity:.6" data-a="abrirInvest" data-id="${i.id}"><span class="principal-txt"><span class="titulo">${esc(i.nome)}</span><span class="sub">${esc(i.tipo || '')}</span></span></button>`).join('')}</div>` : ''}`;
   return casca(E, 'Investimentos', corpo, { voltar: 'mais' });
 }
 
@@ -360,8 +361,8 @@ export function modalInvestForm(E, A, m) {
     </div>
     <label class="campo"><span>Liquidez</span><select class="entrada" data-campo="liquidez">${['Diária', 'No vencimento', 'Após carência'].map((x) => `<option ${f.liquidez === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     ${E.banco.temCampo('investimentos', 'ordemResgate') ? `<label class="campo"><span>Resgate sai de</span><select class="entrada" data-campo="ordemResgate">${I.ORDENS_RESGATE.map((x) => `<option ${(f.ordemResgate || I.ORDENS_RESGATE[0]) === x ? 'selected' : ''}>${x}</option>`).join('')}</select><span class="muted" style="font-size:12px;margin-top:4px;display:block">Como o banco escolhe de quais depósitos tirar um resgate. Nubank: mais novos primeiro.</span></label>` : ''}
-    ${E.banco.temCampo('investimentos', 'irModo') ? `<label class="campo"><span>IR cobrado</span><select class="entrada" data-campo="irModo">${I.IR_MODOS.map((x) => `<option ${(f.irModo || I.IR_MODOS[0]) === x ? 'selected' : ''}>${x}</option>`).join('')}</select><span class="muted" style="font-size:12px;margin-top:4px;display:block">"No rendimento diário": o banco mostra o rendimento de cada dia já sem IR e o resgate cai inteiro na conta (ex.: Mercado Pago). Nubank: no resgate.</span></label>` : ''}
-    <div class="campo" style="display:flex;align-items:center;gap:10px"><span style="flex:1;margin:0;color:var(--text);font-size:15px">Isento de IR ${['LCI', 'LCA', 'Poupança'].includes(f.tipo) ? '<span class="muted" style="font-size:12.5px">(automático para ' + esc(f.tipo) + ')</span>' : ''}</span><button class="chip" aria-pressed="${f.isento === 'Sim'}" data-a="investIsento" ${['LCI', 'LCA', 'Poupança'].includes(f.tipo) ? 'aria-disabled="true"' : ''}>${f.isento === 'Sim' ? 'Sim' : 'Não'}</button></div>
+    ${E.banco.temCampo('investimentos', 'irModo') ? `<label class="campo"><span>IR cobrado</span><select class="entrada" data-campo="irModo">${I.IR_MODOS.map((x) => `<option ${(f.irModo || I.IR_MODOS[0]) === x ? 'selected' : ''}>${x}</option>`).join('')}</select><span class="muted" style="font-size:12px;margin-top:4px;display:block">O banco desconta o IR todo dia (ex.: Mercado Pago) ou só no resgate (ex.: Nubank).</span></label>` : ''}
+    <div class="campo" style="display:flex;align-items:center;gap:10px"><span style="flex:1;margin:0;color:var(--text);font-size:15px">Isento de IR ${['LCI', 'LCA', 'Poupança'].includes(f.tipo) ? '<span class="muted" style="font-size:12.5px">(automático para ' + esc(f.tipo) + ')</span>' : ''}</span>${interruptor(f.isento === 'Sim', 'investIsento', 'Isento de IR', ['LCI', 'LCA', 'Poupança'].includes(f.tipo) ? 'aria-disabled="true"' : '')}</div>
     ${m.editando ? '<p class="muted" style="font-size:12.5px;margin-top:12px">Para colocar ou tirar dinheiro, use Aportar ou Resgatar no detalhe do investimento.</p>' : `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label class="campo"><span>Valor aplicado (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
@@ -385,7 +386,7 @@ function blocoAcertoMov(E, A, inv, f, valor) {
   if (!c || !inv.titular || c.dono === inv.titular) return '';
   if (!R.envolveFamilia(E.db, c.dono, inv.titular)) {
     const txt = !f.foraAcerto ? `A conta é de ${esc(A.nome(c.dono))} e o investimento de ${esc(A.nome(inv.titular))}: entra no acerto do mês.` : 'Presente ou dinheiro dado: não mexe no acerto.';
-    return `<div class="cartao" style="margin-top:14px;background:var(--bg);display:flex;gap:12px;align-items:center"><span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">Entra no acerto</span><span class="muted" style="font-size:12.5px">${txt}</span></span><button class="chip" role="switch" aria-checked="${!f.foraAcerto}" data-a="movForaAcerto" aria-label="Entra no acerto">${!f.foraAcerto ? 'Sim' : 'Não'}</button></div>`;
+    return `<div class="cartao" style="margin-top:14px;background:var(--bg);display:flex;gap:12px;align-items:center"><span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">Entra no acerto</span><span class="muted" style="font-size:12.5px">${txt}</span></span>${interruptor(!f.foraAcerto, 'movForaAcerto', 'Entra no acerto')}</div>`;
   }
   const pessoa = A.fam && c.dono === A.fam.id ? inv.titular : c.dono;
   const outro = A.ps.find((p) => p.id !== pessoa);
@@ -397,8 +398,8 @@ function blocoAcertoMov(E, A, inv, f, valor) {
   const txt = !f.foraAcerto
     ? (paraFamilia ? `O dinheiro passa a ser dos dois: ${esc(A.nome(outro && outro.id))} fica devendo a ${esc(A.nome(pessoa))} a parte ${dl(outro && outro.id)}` : `${esc(A.nome(pessoa))} tirou dinheiro dos dois: fica devendo a ${esc(A.nome(outro && outro.id))} a parte ${dl(outro && outro.id)}`) + parte + '.'
     : (paraFamilia ? `Reserva que ${esc(A.nome(pessoa))} guarda ${so} para a família: não mexe no acerto.` : `${esc(A.nome(pessoa))} pegou de volta dinheiro que tinha guardado ${so}: não mexe no acerto.`);
-  const aviso = E.banco.temCampo('movsInv', 'foraAcerto') ? '' : '<div class="aviso-caixa" style="margin-top:8px">Rode o script da planilha versão 1.11 para poder deixar fora do acerto. Por enquanto divide.</div>';
-  return `<div class="cartao" style="margin-top:14px;background:var(--bg);display:flex;gap:12px;align-items:center"><span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">Dividir no acerto</span><span class="muted" style="font-size:12.5px">${txt}</span></span><button class="chip" role="switch" aria-checked="${!f.foraAcerto}" data-a="movForaAcerto" aria-label="Dividir no acerto">${!f.foraAcerto ? 'Sim' : 'Não'}</button></div>${aviso}`;
+  const aviso = E.banco.temCampo('movsInv', 'foraAcerto') ? '' : '<div class="aviso-caixa" style="margin-top:8px">Atualize a planilha (script de montagem) para usar isto.</div>';
+  return `<div class="cartao" style="margin-top:14px;background:var(--bg);display:flex;gap:12px;align-items:center"><span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">Dividir no acerto</span><span class="muted" style="font-size:12.5px">${txt}</span></span>${interruptor(!f.foraAcerto, 'movForaAcerto', 'Dividir no acerto')}</div>${aviso}`;
 }
 
 // Corrigir o rendimento pelo valor que o banco mostra hoje
@@ -422,13 +423,13 @@ export function modalAjusteInv(E, A, m) {
       <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted">Correção de rendimento (bruto)</span><strong class="${ajuste >= 0 ? 'rec' : 'desp'}">${sinal(ajuste)}</strong></div>
       <p class="muted" style="font-size:12.5px;margin-top:8px">${Math.abs(ajuste) < 0.01 ? 'Já está igual ao banco.' : `O app lança uma correção de ${sinal(ajuste)} no rendimento com data de hoje. O valor aplicado não muda; o IR e o IOF são recalculados. A partir de amanhã o app volta a render pelos índices, já com a correção.`}</p></div>` : '';
   const corpo = `<p class="muted" style="margin:8px 4px 0;font-size:13.5px">${esc(inv.nome)} · no app hoje: líquido ${brl(r.liquido)} · bruto ${brl(r.bruto)}</p>
-    ${temCol ? '' : '<div class="aviso-caixa" style="margin-top:10px">Rode o script da planilha versão 1.13 para poder corrigir pelo banco (o robô precisa saber tratar a correção).</div>'}
+    ${temCol ? '' : '<div class="aviso-caixa" style="margin-top:10px">Atualize a planilha (script de montagem) para usar isto.</div>'}
     ${faltaIdx ? `<div class="aviso-caixa" style="margin-top:10px">Ainda faltam os índices desde ${dataBR(datas[0])}. Espere o robô buscá-los (ou execute atualizarTudo no Apps Script) antes de corrigir: senão a correção cobre a falta dos índices e, quando eles chegarem, o valor passa do banco.</div>` : ''}
     <div class="campo"><span>O valor do banco é</span><div class="chips"><button class="chip" aria-pressed="${base === 'liquido'}" data-a="ajusteBase" data-v="liquido">Líquido (já sem IR)</button><button class="chip" aria-pressed="${base === 'bruto'}" data-a="ajusteBase" data-v="bruto">Bruto</button></div></div>
     <label class="campo"><span>Quanto o banco mostra hoje (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
     ${prev}
     <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarAjusteInv" ${E.salvando || !temCol || faltaIdx ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : 'Corrigir'}</button>`;
-  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Corrigir pelo banco"><div class="alca"></div><h2>Corrigir pelo banco</h2>${corpo}</div>`;
+  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-modal="true" aria-label="Corrigir pelo banco">${topoFolha(`Corrigir pelo banco`, 'fecharModal')}${corpo}</div>`;
 }
 
 export function modalMov(E, A, m) {
@@ -458,12 +459,12 @@ export function modalMov(E, A, m) {
     ${f.tipo === 'Resgate' && !ed ? `<button class="link" style="margin-top:8px" data-a="resgateTotal">Resgatar tudo (${brl(r.liquido)})</button>` : ''}
     <label class="campo"><span>${f.tipo === 'Resgate' ? 'Cai na conta' : 'Sai da conta'}</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${contas.map((c) => `<option value="${c.id}" ${f.conta === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))} (${esc(A.nome(c.dono))})</option>`).join('')}</select></label>
     ${est}${blocoAcertoMov(E, A, inv, f, valor)}
-    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMov" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : ed ? 'Salvar alteração' : f.tipo === 'Resgate' ? 'Registrar resgate' : 'Registrar aporte'}</button>
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMov" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : ed ? 'Salvar alterações' : f.tipo === 'Resgate' ? 'Registrar resgate' : 'Registrar aporte'}</button>
     ${ed ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
       ${m.voltarInv ? '<span></span>' : `<button class="btn btn-borda" data-a="verInvest" data-id="${inv.id}">Ver investimento</button>`}
       <button class="btn btn-perigo" data-a="excluirMovEditando">${ic('lixo', 18)}Excluir</button></div>
       <p class="muted" style="font-size:12.5px;margin-top:10px">${f.tipo === 'Resgate' ? 'Digite o valor que caiu na conta: o app recalcula o bruto e o IR pela posição do dia.' : 'Mudar o aporte muda a posição do investimento.'} Os resgates depois deste são recalculados junto.</p>` : ''}`;
-  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="${f.tipo}"><div class="alca"></div><h2>${ed ? (f.tipo === 'Resgate' ? 'Editar resgate' : 'Editar aporte') : f.tipo === 'Resgate' ? 'Resgatar' : 'Novo aporte'}</h2>${corpo}</div>`;
+  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-modal="true" aria-label="${f.tipo}">${topoFolha(`${ed ? (f.tipo === 'Resgate' ? 'Editar resgate' : 'Editar aporte') : f.tipo === 'Resgate' ? 'Resgatar' : 'Novo aporte'}`, 'fecharModal')}${corpo}</div>`;
 }
 
 export { valorTxt };
@@ -496,7 +497,6 @@ export function telaPlanejamento(E) {
       ${lin('Entradas', 'fixas de renda', cel(pl.renda), cel(res.entradasPrev), cel(res.entradas, false, 'var(--receita)'))}
       ${lin('Gastos', 'metas + fixas', cel(-pl.gastos), cel(-res.gastosPrev), cel(-res.gastos))}
       ${lin('Sobra', '', cel(pl.sobra, true), cel(res.sobraPrev, true, res.sobraPrev < 0 ? 'var(--despesa)' : ''), cel(res.sobraReal, true), true)}
-      <p class="muted" style="font-size:12px;margin-top:10px">Previsto = o que já foi lançado + contas fixas que ainda vão entrar ou sair + o que as metas ainda reservam. Real = só o que já foi lançado.</p>
     </div>`;
 
   // barra do mês: real, previstos, reservado nas metas e a marca do planejado
@@ -537,20 +537,19 @@ export function telaPlanejamento(E) {
     const peso = R.pesoNoPerfil(db, x.dono, p, mes);
     return `<button class="item" data-a="editarMeta" data-id="${x.meta.id}" style="flex-direction:column;align-items:stretch;gap:8px;${sub ? 'padding-left:' + (14 + 14 * nivel) + 'px' : ''}">
       <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;text-align:left"><span class="titulo" style="flex:1;min-width:120px">${sub ? '↳ ' : ''}${esc(x.nome)}${x.grupo ? ' <span class="muted" style="font-weight:600;font-size:12px">grupo</span>' : x.varias && x.meta.nome ? ` <span class="muted" style="font-weight:600;font-size:12px">${esc(x.cats.map((c) => nomeCat(db, c)).join(' + '))}</span>` : ''}</span>
-        ${!ehFam ? `<span class="pill ${A.classe(x.dono)}">${esc(A.nome(x.dono))}</span>` : ''}${x.meta.mes !== 'Todo mês' ? '<span class="pill neutra">só este mês</span>' : ''}</span>
+        ${!ehFam ? `<span class="pill ${A.classe(x.dono)}">${esc(A.nome(x.dono))}</span>` : ''}${x.meta.mes !== 'Todo mês' ? '<span class="pill neutra">Só este mês</span>' : ''}</span>
       <span style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--surf2)"><span style="width:${Math.min(100, x.pctReal * 100).toFixed(1)}%;background:${corPct(x.pct)}"></span><span style="width:${Math.max(0, Math.min(100, x.pct * 100) - Math.min(100, x.pctReal * 100)).toFixed(1)}%;background:repeating-linear-gradient(45deg,${corPct(x.pct)} 0 3px,transparent 3px 6px)"></span></span>
       <span style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span class="muted" style="font-size:12.5px;text-align:left">${x.previsto ? sens(brl(x.real)) + ' lançados + ' + sens(brl(x.previsto)) + ' previstos · ' : ''}${passou > 0.005 ? `<strong style="color:var(--despesa)">passou ${sens(brl(passou))}</strong>` : `faltam ${sens(brl(arred(x.valor - x.usado)))}`}${peso < 1 && peso > 0 ? ' · sua parte ' + Math.round(peso * 100) + '%' : ''}</span>
         <span style="font-weight:800;font-size:14px;white-space:nowrap">${sens(brl(x.usado))} <span class="muted" style="font-weight:600">/ ${sens(brl(x.valor))}</span></span></span>
     </button>`;
   };
-  const metas = `<div class="secao-titulo"><span>Metas de ${esc(nomeM)}</span><button class="link" data-a="novaMeta">${ic('mais_', 15, 'style="vertical-align:-2px"')} Nova meta</button></div>
-    <div class="lista">${ordem.length ? ordem.map(itemMeta).join('') : `<div class="vazio">Nenhuma meta em ${esc(nomeM)}. <button class="link" data-a="novaMeta">Criar meta</button></div>`}</div>
-    <p class="muted" style="font-size:12.5px;margin:8px 4px 0">A meta entra nos gastos previstos pelo que ainda falta. Cada lançamento ou conta fixa prevista na categoria toma o lugar dela, sem contar duas vezes. Metas que dividem categorias (ex.: Mercado dentro de Alimentação) não contam duas vezes.</p>`;
+  const metas = `<div class="secao-titulo"><h2>Metas de ${esc(nomeM)}</h2><button class="link" data-a="novaMeta">${ic('mais_', 15, 'style="vertical-align:-2px"')} Nova meta</button></div>
+    <div class="lista">${ordem.length ? ordem.map(itemMeta).join('') : `<div class="vazio">Nenhuma meta em ${esc(nomeM)}. <button class="link" data-a="novaMeta">Criar meta</button></div>`}</div>`;
 
   // contas fixas do mês
   const prev = R.previstosDoMes(db, mes).filter((x) => !x.ehRenda && x.tipo !== R.TIPO.receita && R.pesoNoPerfil(db, x.dono, p, mes) > 0);
   const totPrev = arred(prev.reduce((s, x) => s + x.valor * R.pesoNoPerfil(db, x.dono, p, mes), 0));
-  const fixas = `<div class="secao-titulo"><span>Contas fixas</span><a href="#/fixas">Ver todas</a></div>
+  const fixas = `<div class="secao-titulo"><h2>Contas fixas</h2><a href="#/fixas">Ver todas</a></div>
     <div class="lista">${prev.length ? prev.slice(0, 6).map((x) => `<div class="item"><span class="principal-txt"><span class="titulo">${esc(x.desc)}</span><span class="sub">${dataCurta(x.data)} · ${esc(nomeCat(db, x.categoria))}</span></span><span class="valor">${sens(brl(x.valor))}</span></div>`).join('') + (prev.length > 6 ? `<a class="item" href="#/fixas"><span class="principal-txt"><span class="sub">e mais ${prev.length - 6}</span></span>${ic('seta', 16)}</a>` : '') : `<div class="vazio">Nenhuma conta fixa falta lançar em ${esc(nomeM)}.</div>`}</div>
     ${prev.length ? `<p class="muted" style="font-size:12.5px;margin:8px 4px 0">Faltam lançar ${prev.length} · ${sens(brl(totPrev))}${!ehFam ? ' (sua parte)' : ''}</p>` : ''}`;
 
@@ -593,19 +592,19 @@ export function modalMeta(E, A, m) {
   }
   const corpo = `
     <div class="campo"><span>De quem é</span>${meta ? `<div><span class="pill ${A.classe(f.dono)}">${esc(A.nome(f.dono))}</span></div>` : `<div class="donos" role="radiogroup">${donos.map((p) => `<button role="radio" class="${A.classe(p.id)}" aria-checked="${f.dono === p.id}" data-a="metaDono" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>`}
-      <span class="muted" style="font-size:12px;margin-top:4px">${f.dono && fam && f.dono === fam.id ? 'Gastos da casa, pagos por qualquer um.' : 'Só os gastos pessoais desta pessoa.'}</span></div>
-    <div class="campo"><span>${multi ? 'Categorias — toque no grupo para ele inteiro, ou abra para escolher subcategorias. Dá para juntar várias.' : 'Categoria — toque no grupo para ele inteiro, ou abra para escolher uma subcategoria.'}</span>
+      <span class="muted" style="font-size:12px;margin-top:4px">${f.dono && fam && f.dono === fam.id ? 'Gastos da casa, pagos por qualquer um.' : 'Conta só os gastos pessoais de ' + esc(A.nome(f.dono)) + '.'}</span></div>
+    <div class="campo"><span>${multi ? 'Categorias' : 'Categoria'}</span>
       <div style="border:1px solid var(--line);border-radius:14px;overflow:hidden;max-height:340px;overflow-y:auto" class="rolar">${linhas}</div>
-      ${!multi ? '<span class="muted" style="font-size:12px;margin-top:6px">Para juntar várias categorias numa meta, atualize a planilha para a versão 1.17 (rode o script de montagem).</span>' : ''}
+      ${!multi ? '<span class="muted" style="font-size:12px;margin-top:6px">Atualize a planilha (script de montagem) para usar juntar várias categorias.</span>' : ''}
       ${nomesSel.length ? `<span style="font-size:13px;margin-top:6px"><span class="muted">Escolhidas:</span> <strong>${esc(nomesSel.join(' + '))}</strong></span>` : ''}</div>
     ${multi && sel.length > 1 ? `<label class="campo"><span>Nome da meta (opcional)</span><input class="entrada" data-campo="nome" value="${esc(f.nome || '')}" placeholder="${esc(nomesSel.map((n) => n.replace(' (grupo)', '')).join(' + '))}"></label>` : ''}
     <label class="campo"><span>Limite no mês (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
     ${info}
     ${meta ? `<p class="muted" style="font-size:12.5px;margin-top:12px">${meta.mes === 'Todo mês' ? 'Vale todo mês' + (meta.desde ? ' desde ' + nomeMesAno(meta.desde).toLowerCase() : '') + '. Ao salvar, você escolhe se a mudança vale só para ' + esc(nomeM) + ' ou daqui em diante.' : 'Vale só em ' + esc(nomeM) + '.'}</p>`
     : `<div class="campo"><span>Vale</span><div class="chips"><button class="chip" aria-pressed="${f.vale !== 'mes'}" data-a="metaVale" data-v="todo">Todo mês, a partir de ${esc(nomeM)}</button><button class="chip" aria-pressed="${f.vale === 'mes'}" data-a="metaVale" data-v="mes">Só em ${esc(nomeM)}</button></div></div>`}
-    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMeta" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : meta ? 'Salvar alteração' : 'Criar meta'}</button>
+    <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMeta" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : meta ? 'Salvar alterações' : 'Criar meta'}</button>
     ${meta ? `<button class="btn btn-perigo btn-largo" style="margin-top:8px" data-a="excluirMeta">${ic('lixo', 18)}Excluir meta</button>` : ''}`;
-  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Meta"><div class="alca"></div><h2>${meta ? 'Editar meta' : 'Nova meta'}</h2>${corpo}</div>`;
+  return `<button class="veu" data-a="fecharModal" aria-label="Fechar"></button><div class="folha" role="dialog" aria-modal="true" aria-label="Meta">${topoFolha(`${meta ? 'Editar meta' : 'Nova meta'}`, 'fecharModal')}${corpo}</div>`;
 }
 
 // ------------------------------------------------------------ relatórios
@@ -655,11 +654,10 @@ export function telaRelatorios(E) {
       return [...cats].map((c) => ({ g: c, mes: arred(doMes.get(c) || 0), media: arred(media((k) => k === c)) })).sort((a, b) => b.mes - a.mes);
     };
     const nomeDe = (id) => (id ? (R.porId(db.categorias, id) || {}).nome || '?' : 'Sem categoria');
-    corpo = `<div class="cartao" style="margin-bottom:12px"><div class="muted" style="font-size:13px">${ehFam ? 'Gastos da família' : 'Seus gastos (pessoais + sua parte na família)'} em ${esc(nomeM)}, já lançados</div>
+    corpo = `<div class="cartao" style="margin-bottom:12px"><div class="muted" style="font-size:13px">${ehFam ? 'Gastos da família' : 'Seus gastos'} lançados em ${esc(nomeM)}</div>
         <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px"><span style="font-size:26px;font-weight:800">${sens(brl(total))}</span><span class="muted" style="font-size:13px">média dos ${porAnt.length || 0} meses anteriores ${sens(brl(totalMedia))}</span></div>
         <div style="display:flex;gap:16px;margin-top:10px;font-size:12.5px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--accent);margin-right:6px"></span>Este mês</span><span><span style="display:inline-block;width:2px;height:12px;background:var(--text);margin-right:6px;vertical-align:-2px"></span>Média dos meses anteriores</span></div></div>
-      <div class="lista">${linhas.length ? linhas.map((x) => barra(x, nomeDe(x.g)) + (E.relGrupo === x.g ? subsDe(x.g).map((y) => barra(y, nomeDe(y.g), true)).join('') : '')).join('') : `<div class="vazio">Nenhum gasto em ${esc(nomeM)} nem nos meses anteriores.</div>`}</div>
-      <p class="muted" style="font-size:12.5px;margin:8px 4px 0">Toque num grupo para ver as subcategorias. Cartão conta no mês da fatura, como no resto do app.</p>`;
+      <div class="lista">${linhas.length ? linhas.map((x) => barra(x, nomeDe(x.g)) + (E.relGrupo === x.g ? subsDe(x.g).map((y) => barra(y, nomeDe(y.g), true)).join('') : '')).join('') : `<div class="vazio">Nenhum gasto em ${esc(nomeM)} nem nos meses anteriores.</div>`}</div>`;
   }
 
   if (aba === 'meses') {
@@ -704,7 +702,7 @@ export function telaRelatorios(E) {
       </div>`; }).join('')}
       <div style="display:flex;gap:16px;margin-top:14px;font-size:12px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--soft);margin-right:6px"></span>Quanto pagou dos gastos da família</span><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--soft) 0 2px,transparent 2px 5px);outline:1px solid var(--soft);outline-offset:-1px;margin-right:6px"></span>Parte que cabe a cada um</span></div>
     </div>
-    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Somando tudo (gastos de um pagos pelo outro, transferências, acertos já feitos)</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a>`;
+    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto de ${esc(nomeM)}</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a>`;
     if (!p1 || !p2) corpo = '<div class="vazio">Precisa de duas pessoas na aba Pessoas.</div>';
   }
   return casca(E, 'Relatórios', abas + corpo, { voltar: 'planejamento', acoes: seletorMes(E) });

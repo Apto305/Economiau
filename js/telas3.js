@@ -3,7 +3,7 @@ import { esc, brl, brlSinal, dataCurta, nomeMesAno, hojeISO, mesDe, somaMes, arr
 import { ic } from './icones.js';
 import * as R from './regras.js';
 import * as T2 from './telas2.js';
-import { apoio, casca, corConta } from './telas.js';
+import { apoio, casca, corConta, topoFolha, interruptor } from './telas.js';
 
 const sens = (txt) => `<span class="valor-sens">${txt}</span>`;
 const LSget = (k, d) => { try { const v = localStorage.getItem('economiau-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -63,11 +63,11 @@ export function modalInicio(E, A, m) {
       <button class="icone-btn" data-a="inicioMover" data-id="${id}" data-v="1" aria-label="Descer ${esc(nomes[id][0])}" ${i === pr.ordem.length - 1 ? 'disabled style="opacity:.3"' : ''}><span style="display:inline-block;transform:rotate(90deg)">${ic('seta', 18)}</span></button>
     </div>`;
   }).join('');
-  const corpo = `<p class="muted" style="font-size:13px;margin:6px 4px 10px">Escolha os blocos do Início de ${esc(A.nome(E.perfil))} e a ordem deles. Fica salvo neste aparelho, para este perfil.</p>
+  const corpo = `<p class="muted" style="font-size:13px;margin:6px 4px 10px">Fica salvo neste aparelho, só para ${esc(A.nome(E.perfil))}.</p>
     ${lista}
     <button class="btn btn-pri btn-largo" style="margin-top:16px" data-a="salvarInicio">Salvar</button>
     <button class="btn btn-largo" style="margin-top:6px;background:transparent;color:var(--muted)" data-a="inicioPadrao">Voltar ao padrão</button>`;
-  return `<button class="veu" data-a="fecharInicio" aria-label="Fechar"></button><div class="folha" role="dialog" aria-label="Personalizar o Início"><div class="alca"></div><h2>Personalizar o Início</h2>${corpo}</div>`;
+  return `<button class="veu" data-a="fecharInicio" aria-label="Fechar"></button><div class="folha" role="dialog" aria-modal="true" aria-label="Personalizar o Início">${topoFolha(`Personalizar o Início`, 'fecharInicio')}${corpo}</div>`;
 }
 
 // Blocos opcionais do Início
@@ -75,22 +75,24 @@ export function blocoExtra(E, A, id, res) {
   const db = E.db, mes = E.mes, p = E.perfil, fam = A.fam;
   const ehFam = fam && p === fam.id;
   const nomeM = nomeMesAno(mes).split(' ')[0].toLowerCase();
-  const titulo = (t, link, rot) => `<div class="secao-titulo"><span>${t}</span>${link ? `<a href="#/${link}">${rot}</a>` : ''}</div>`;
+  const titulo = (t, link, rot) => `<div class="secao-titulo"><h2>${t}</h2>${link ? `<a href="#/${link}">${rot}</a>` : ''}</div>`;
+  // limite e investimentos só existem hoje: com outro mês escolhido, o título avisa
+  const deHoje = mes !== mesDe(hojeISO()) ? ' hoje' : '';
   const barra = (pct, cor) => `<span style="display:block;height:8px;border-radius:4px;background:var(--surf2);overflow:hidden;margin-top:6px"><span style="display:block;height:100%;width:${Math.max(0, Math.min(100, pct * 100)).toFixed(1)}%;background:${cor};border-radius:0 4px 4px 0"></span></span>`;
   const corPct = (x) => (x >= 1 ? 'var(--despesa)' : x >= 0.8 ? 'var(--aviso)' : 'var(--accent)');
 
   if (id === 'avisos') {
     const av = avisos(E);
-    return titulo('Avisos', av.length ? 'config' : '', 'Ajustar') + `<div class="lista">${av.length ? av.map((x) => `<a class="item" href="#/${x.rota}">${ic(x.icone || 'aviso', 20, `style="color:${x.cor || 'var(--aviso)'};flex:none"`)}<span class="principal-txt"><span class="titulo" style="white-space:normal">${x.titulo}</span>${x.sub ? `<span class="sub" style="white-space:normal">${x.sub}</span>` : ''}</span>${ic('seta', 16)}</a>`).join('') : '<div class="vazio">Nenhum aviso agora.</div>'}</div>`;
+    return titulo('Avisos de hoje', av.length ? 'config' : '', 'Configurar') + `<div class="lista">${av.length ? av.map((x) => `<a class="item" href="#/${x.rota}">${ic(x.icone || 'aviso', 20, `style="color:${x.cor || 'var(--aviso)'};flex:none"`)}<span class="principal-txt"><span class="titulo" style="white-space:normal">${x.titulo}</span>${x.sub ? `<span class="sub" style="white-space:normal">${x.sub}</span>` : ''}</span>${ic('seta', 16)}</a>`).join('') : '<div class="vazio">Nenhum aviso agora.</div>'}</div>`;
   }
   if (id === 'metas') {
     const lista = (res.metas || []).filter((x) => R.pesoNoPerfil(db, x.dono, p, mes) > 0).sort((a, b) => b.pct - a.pct).slice(0, 5);
-    return titulo('Metas de ' + esc(nomeM), 'planejamento', 'Planejamento') + `<div class="lista">${lista.length ? lista.map((x) => `<a class="item" href="#/planejamento" style="flex-direction:column;align-items:stretch;gap:0"><span style="display:flex;justify-content:space-between;gap:8px"><span class="titulo">${esc(x.nome)}</span><span style="white-space:nowrap;font-size:13.5px"><strong>${sens(brl(x.usado))}</strong> <span class="muted">/ ${sens(brl(x.valor))}</span></span></span>${barra(x.pct, corPct(x.pct))}</a>`).join('') : '<div class="vazio">Nenhuma meta neste mês. <a href="#/planejamento">Criar no Planejamento</a></div>'}</div>`;
+    return titulo('Metas de ' + esc(nomeM), 'planejamento', 'Ver planejamento') + `<div class="lista">${lista.length ? lista.map((x) => `<a class="item" href="#/planejamento" style="flex-direction:column;align-items:stretch;gap:0"><span style="display:flex;justify-content:space-between;gap:8px"><span class="titulo">${esc(x.nome)}</span><span style="white-space:nowrap;font-size:13.5px"><strong>${sens(brl(x.usado))}</strong> <span class="muted">/ ${sens(brl(x.valor))}</span></span></span>${barra(x.pct, corPct(x.pct))}</a>`).join('') : '<div class="vazio">Nenhuma meta neste mês. <a href="#/planejamento">Criar no Planejamento</a></div>'}</div>`;
   }
   if (id === 'planejado') {
     const pl = R.planejadoDoMes(db, p, mes, res.metas);
     const dif = arred(res.sobraPrev - pl.sobra);
-    return titulo('Sobra de ' + esc(nomeM), 'planejamento', 'Planejamento') + `<div class="cartao"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><span><span class="muted" style="display:block;font-size:12.5px">Prevista</span><strong style="font-size:22px;${res.sobraPrev < 0 ? 'color:var(--despesa)' : ''}">${sens(brlSinal(res.sobraPrev))}</strong></span><span style="text-align:right"><span class="muted" style="display:block;font-size:12.5px">Planejada</span><strong style="font-size:22px">${sens(brlSinal(pl.sobra))}</strong></span></div>
+    return titulo('Sobra de ' + esc(nomeM), 'planejamento', 'Ver planejamento') + `<div class="cartao"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><span><span class="muted" style="display:block;font-size:12.5px">Prevista</span><strong style="font-size:22px;${res.sobraPrev < 0 ? 'color:var(--despesa)' : ''}">${sens(brlSinal(res.sobraPrev))}</strong></span><span style="text-align:right"><span class="muted" style="display:block;font-size:12.5px">Planejada</span><strong style="font-size:22px">${sens(brlSinal(pl.sobra))}</strong></span></div>
       <div class="muted" style="font-size:12.5px;margin-top:6px">${pl.renda || pl.gastos ? (Math.abs(dif) < 0.01 ? 'Igual ao planejado.' : sens(brl(Math.abs(dif))) + (dif > 0 ? ' acima' : ' abaixo') + ' do planejado.') : 'Crie metas e contas fixas para ter um planejado.'}</div></div>`;
   }
   if (id === 'grupos') {
@@ -103,13 +105,13 @@ export function blocoExtra(E, A, id, res) {
     const resto = arred(total - top.reduce((s, [, v]) => s + v, 0));
     const max = Math.max(1, ...top.map(([, v]) => v));
     const nome = (gid) => (gid ? (R.porId(db.categorias, gid) || {}).nome || '?' : 'Sem categoria');
-    return titulo('Despesas por grupo', 'relatorios', 'Relatórios') + `<div class="cartao">${top.length ? top.map(([gid, v]) => `<div style="margin-top:8px" title="${esc(nome(gid))}: ${brl(v)}"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>${esc(nome(gid))}</span><span style="font-variant-numeric:tabular-nums"><strong>${sens(brl(v))}</strong> <span class="muted">${total ? Math.round((v / total) * 100) : 0}%</span></span></div>${barra(v / max, 'var(--accent)')}</div>`).join('') + (resto > 0.005 ? `<div class="muted" style="font-size:12.5px;margin-top:10px">Outros grupos: ${sens(brl(resto))}</div>` : '') : `<div class="vazio">Nenhum gasto lançado em ${esc(nomeM)}.</div>`}</div>`;
+    return titulo('Despesas por grupo', 'relatorios', 'Ver relatórios') + `<div class="cartao">${top.length ? top.map(([gid, v]) => `<div style="margin-top:8px" title="${esc(nome(gid))}: ${brl(v)}"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>${esc(nome(gid))}</span><span style="font-variant-numeric:tabular-nums"><strong>${sens(brl(v))}</strong> <span class="muted">${total ? Math.round((v / total) * 100) : 0}%</span></span></div>${barra(v / max, 'var(--accent)')}</div>`).join('') + (resto > 0.005 ? `<div class="muted" style="font-size:12.5px;margin-top:10px">Outros grupos: ${sens(brl(resto))}</div>` : '') : `<div class="vazio">Nenhum gasto lançado em ${esc(nomeM)}.</div>`}</div>`;
   }
   if (id === 'limite') {
     const hoje = hojeISO();
     const cartoes = db.cartoes.filter((c) => R.ativo(c) && Number(c.limite) > 0 && (ehFam ? c.dono === fam.id : c.dono === p || R.pagaPorDe(db, c) === p));
     const usado = (c) => arred(R.faturasDoCartao(db, c.id).filter((f) => R.situacaoFatura(db, f, hoje) !== 'Paga').reduce((s, f) => s + R.totalFatura(db, f.id), 0));
-    return titulo('Limite dos cartões', 'faturas', 'Faturas') + `<div class="lista">${cartoes.length ? cartoes.map((c) => { const u = usado(c); const pct = u / Number(c.limite); return `<a class="item" href="#/faturas" style="flex-direction:column;align-items:stretch;gap:0"><span style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="display:flex;gap:8px;align-items:center;min-width:0"><span class="chip-cor" style="background:${corConta(c.cor)};width:24px;height:24px;font-size:12px">${esc(c.nome[0])}</span><span class="titulo">${esc(c.nome)}</span></span><span style="white-space:nowrap;font-size:13px"><strong>${sens(brl(u))}</strong> <span class="muted">de ${sens(brl(c.limite))}</span></span></span>${barra(pct, corPct(pct))}<span class="muted" style="font-size:12px;margin-top:4px">disponível ${sens(brl(Math.max(0, Number(c.limite) - u)))} · inclui parcelas futuras</span></a>`; }).join('') : '<div class="vazio">Nenhum cartão com limite cadastrado neste perfil.</div>'}</div>`;
+    return titulo('Limite dos cartões' + deHoje, 'faturas', 'Ver faturas') + `<div class="lista">${cartoes.length ? cartoes.map((c) => { const u = usado(c); const pct = u / Number(c.limite); return `<a class="item" href="#/faturas" style="flex-direction:column;align-items:stretch;gap:0"><span style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="display:flex;gap:8px;align-items:center;min-width:0"><span class="chip-cor" style="background:${corConta(c.cor)};width:24px;height:24px;font-size:12px">${esc(c.nome[0])}</span><span class="titulo">${esc(c.nome)}</span></span><span style="white-space:nowrap;font-size:13px"><strong>${sens(brl(u))}</strong> <span class="muted">de ${sens(brl(c.limite))}</span></span></span>${barra(pct, corPct(pct))}<span class="muted" style="font-size:12px;margin-top:4px">disponível ${sens(brl(Math.max(0, Number(c.limite) - u)))} · inclui parcelas futuras</span></a>`; }).join('') : '<div class="vazio">Nenhum cartão com limite cadastrado neste perfil.</div>'}</div>`;
   }
   if (id === 'investimentos') {
     const C = T2.calcInvest(E);
@@ -117,7 +119,7 @@ export function blocoExtra(E, A, id, res) {
     const daFam = !ehFam && fam ? (db.investimentos || []).filter((i) => R.ativo(i) && i.titular === fam.id && C.res[i.id]) : [];
     const soma = (l) => arred(l.reduce((s, i) => s + C.res[i.id].liquido, 0));
     const rend = (l) => arred(l.reduce((s, i) => s + (C.res[i.id].bruto - C.res[i.id].aplicado), 0));
-    return titulo('Investimentos', 'investimentos', 'Ver todos') + `<a class="cartao" href="#/investimentos" style="display:block;color:inherit;text-decoration:none"><span class="muted" style="font-size:12.5px">${ehFam ? 'Da família' : 'Seus'} · líquido se resgatar hoje</span><div style="font-size:24px;font-weight:800;margin-top:2px">${sens(brl(soma(lista)))}</div><div class="muted" style="font-size:12.5px;margin-top:2px">${lista.length} investimento${lista.length === 1 ? '' : 's'} · rendimento bruto ${sens(brl(rend(lista)))}</div>${daFam.length ? `<div class="muted" style="font-size:12.5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Da família: ${sens(brl(soma(daFam)))} (${daFam.length})</div>` : ''}</a>`;
+    return titulo('Investimentos' + deHoje, 'investimentos', 'Ver todos') + `<a class="cartao" href="#/investimentos" style="display:block;color:inherit;text-decoration:none"><span class="muted" style="font-size:12.5px">${ehFam ? 'Da família' : 'Seus'} · líquido se resgatar hoje</span><div style="font-size:24px;font-weight:800;margin-top:2px">${sens(brl(soma(lista)))}</div><div class="muted" style="font-size:12.5px;margin-top:2px">${lista.length} investimento${lista.length === 1 ? '' : 's'} · rendimento bruto ${sens(brl(rend(lista)))}</div>${daFam.length ? `<div class="muted" style="font-size:12.5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Da família: ${sens(brl(soma(daFam)))} (${daFam.length})</div>` : ''}</a>`;
   }
   return '';
 }
@@ -178,7 +180,7 @@ export function telaConfig(E) {
   const cfg = config();
   const db = E.db;
   const chips = (campo, ops) => `<div class="chips">${ops.map(([v, n]) => `<button class="chip" aria-pressed="${String(cfg[campo]) === String(v)}" data-a="cfg" data-c="${campo}" data-v="${v}">${n}</button>`).join('')}</div>`;
-  const chave = (on, acao, v, rot) => `<button class="chip" role="switch" aria-checked="${!!on}" aria-pressed="${!!on}" data-a="${acao}" data-v="${v || ''}" aria-label="${esc(rot)}">${on ? 'Sim' : 'Não'}</button>`;
+  const chave = (on, acao, v, rot, off) => interruptor(on, acao, rot, `data-v="${v || ''}"${off ? ' aria-disabled="true"' : ''}`);
   const linha = (titulo, sub, ctrl) => `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)"><span style="flex:1"><span style="display:block;font-weight:700">${titulo}</span>${sub ? `<span class="muted" style="font-size:12.5px">${sub}</span>` : ''}</span>${ctrl}</div>`;
   const notif = typeof Notification === 'undefined' ? 'indisponivel' : Notification.permission;
   const pend = E.banco && !E.banco.demo ? E.banco.pendentes : 0;
@@ -200,7 +202,7 @@ export function telaConfig(E) {
         ${linha('Meta em 80%', 'Quando o lançado + previsto chega a 80% da meta.', chave(cfg.avisos.meta, 'cfgAviso', 'meta', 'Meta em 80%'))}
         ${linha('Conta de valor variável', 'Luz, água… quando chega o dia, lembra de lançar o valor certo.', chave(cfg.avisos.variavel, 'cfgAviso', 'variavel', 'Conta de valor variável'))}
         ${linha('Acerto pendente', 'Acerto do mês anterior ainda não registrado.', chave(cfg.avisos.acerto, 'cfgAviso', 'acerto', 'Acerto pendente'))}
-        ${linha('Notificação no celular', notif === 'indisponivel' ? 'Este navegador não mostra notificações. No iPhone, instale o app na tela inicial (iOS 16.4 ou mais novo).' : notif === 'denied' ? 'Bloqueadas nas configurações do navegador/celular. Libere por lá para ligar.' : 'Mostra os avisos como notificação ao abrir o app (uma vez por dia cada). Com o app fechado o celular não avisa: isso precisaria de um servidor.', notif === 'indisponivel' || notif === 'denied' ? '<span class="pill neutra">indisponível</span>' : chave(cfg.notificar && notif === 'granted', 'cfgNotificar', '', 'Notificação no celular'))}
+        ${linha('Notificação no celular', notif === 'indisponivel' ? 'Este navegador não mostra notificações. No iPhone, instale o app na tela inicial (iOS 16.4 ou mais novo).' : notif === 'denied' ? 'Bloqueadas no navegador ou no celular. Libere por lá para ligar.' : 'Avisa uma vez por dia, quando você abre o app.', chave(cfg.notificar && notif === 'granted', 'cfgNotificar', '', 'Notificação no celular', notif === 'indisponivel' || notif === 'denied'))}
       </div>
     </div>
     <div>
@@ -208,9 +210,9 @@ export function telaConfig(E) {
         ${linha(esc(E.banco ? E.banco.titulo || 'Planilha' : ''), E.banco && E.banco.demo ? 'Modo demonstração (dados de exemplo neste aparelho)' : E.banco && E.banco.offline ? 'Sem internet: usando a cópia deste aparelho' : 'Conectada', E.banco && !E.banco.demo ? `<a class="btn btn-peq btn-sec" href="https://docs.google.com/spreadsheets/d/${esc(E.banco.id)}" target="_blank" rel="noopener">Abrir</a>` : '')}
         ${E.banco && !E.banco.demo ? linha('Lançamentos sem internet', pend ? `${pend} esperando para ir para a planilha` : 'Nada esperando: tudo já está na planilha.', pend ? '<button class="btn btn-peq btn-sec" data-a="enviarFila">Enviar</button>' : '') : ''}
         ${linha('Atualizar dados', 'Lê a planilha de novo (útil depois de mexer nela direto).', '<button class="btn btn-peq btn-sec" data-a="recarregar">Atualizar</button>')}
-        ${E.banco && !E.banco.demo ? linha('Estrutura da planilha', E.banco.temCampo('metas', 'categorias') ? 'Atualizada (1.17)' : 'Desatualizada: rode o script de montagem 1.17 para usar tudo', '') : ''}
+        ${E.banco && !E.banco.demo ? linha('Estrutura da planilha', E.banco.temCampo('metas', 'categorias') ? 'Atualizada (1.17)' : 'Desatualizada. Atualize a planilha (script de montagem) para usar isto.', '') : ''}
       </div>
-      ${C ? `<div class="secao-titulo" style="margin-top:4px"><span>Robô dos índices</span></div>${T2.statusRobo(E, C).replace('margin-top:12px;', 'margin-top:0;')}` : ''}
+      ${C ? `<div class="secao-titulo" style="margin-top:4px"><h2>Robô dos índices</h2></div>${T2.statusRobo(E, C).replace('margin-top:12px;', 'margin-top:0;')}` : ''}
       <div class="cartao"><h2 style="font-size:16px;font-weight:800">Pessoas com acesso</h2>
         ${pessoas.map((x) => `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)">${A.avatar(x.id, 32)}<span style="flex:1;min-width:0"><span style="display:block;font-weight:700">${esc(x.nome)}</span><span class="muted" style="font-size:12.5px;overflow-wrap:anywhere">${esc(x.email || 'sem e-mail')}</span></span></div>`).join('')}
         <p class="muted" style="font-size:12.5px;margin-top:8px">Quem entra é decidido pela aba Pessoas e pelo compartilhamento da planilha no Google Drive.</p>
