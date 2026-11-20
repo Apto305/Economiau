@@ -3,12 +3,12 @@ import { esc, brl, brlSinal, dataCurta, dataBR, nomeMesAno, mesDe, lerValor, arr
 import { ic } from './icones.js';
 import * as R from './regras.js';
 import * as I from './invest.js';
-import { apoio, casca, corConta, topoFolha, interruptor, segmento } from './telas.js';
+import { apoio, casca, corConta, topoFolha, interruptor, segmento, botaoCategoria } from './telas.js';
 
 const sens = (txt) => `<span class="valor-sens">${txt}</span>`;
 const valorTxt = (n) => (n === '' || n === null || n === undefined ? '' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const pct = (n, d = 1) => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) + '%';
-const seletorMes = (E) => `<div style="display:flex;align-items:center;gap:2px;height:40px;padding:0 4px;border-radius:12px;background:var(--surf)">
+const seletorMes = (E) => `<div class="mes-sel" style="display:flex;align-items:center;gap:2px;height:40px;padding:0 4px;border-radius:12px;background:var(--surf)">
     <button class="icone-btn" style="width:34px;height:34px" data-a="mudarMes" data-v="-1" aria-label="Mês anterior">${ic('esq', 16)}</button>
     <span style="font-size:14px;font-weight:700;padding:0 4px;white-space:nowrap"><span class="so-largo">${nomeMesAno(E.mes)}</span><span class="so-curto" style="text-transform:capitalize">${nomeMesAno(E.mes).slice(0, 3)} ${E.mes.slice(0, 4)}</span></span>
     <button class="icone-btn" style="width:34px;height:34px" data-a="mudarMes" data-v="1" aria-label="Próximo mês">${ic('seta', 16)}</button></div>`;
@@ -279,6 +279,12 @@ export function telaInvestimentos(E) {
   return casca(E, 'Investimentos', corpo, { voltar: 'mais' });
 }
 
+// Contas num <select>, separadas por pessoa (sem repetir o nome em cada uma)
+const opcoesContas = (A, contas, atual) => [...A.ps, A.fam].filter(Boolean).map((p) => {
+  const cs = contas.filter((c) => c.dono === p.id);
+  return cs.length ? `<optgroup label="${p.tipo === 'Família' ? 'Da família' : (A.classe(p.id) === 'gio' ? 'Da ' : 'Do ') + esc(p.nome)}">${cs.map((c) => `<option value="${c.id}" ${atual === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))}</option>`).join('')}</optgroup>` : '';
+}).join('') + contas.filter((c) => ![...A.ps, A.fam].filter(Boolean).some((p) => p.id === c.dono)).map((c) => `<option value="${c.id}" ${atual === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))}</option>`).join('');
+
 // ------------------------------------------------------------ modais
 const veu = () => '<button class="veu" data-a="fecharModal" aria-label="Fechar"></button>';
 const telaModal = (titulo, corpo, rodape = '', larga = false) => `${veu()}<div class="tela-cheia ${larga ? 'larga' : ''}" role="dialog" aria-label="${esc(titulo)}">
@@ -366,7 +372,7 @@ export function modalInvestForm(E, A, m) {
     ${m.editando ? '<p class="muted" style="font-size:12.5px;margin-top:12px">Para colocar ou tirar dinheiro, use Aportar ou Resgatar no detalhe do investimento.</p>' : `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label class="campo"><span>Valor aplicado (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
-      <label class="campo"><span>Saiu da conta</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${contas.map((c) => `<option value="${c.id}" ${f.conta === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))} (${esc(A.nome(c.dono))})</option>`).join('')}</select></label>
+      <label class="campo"><span>Saiu da conta</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${opcoesContas(A, contas, f.conta)}</select></label>
     </div>
     ${valor ? blocoAcertoMov(E, A, { titular: f.titular }, { ...f, tipo: 'Aporte', data: f.dataAplic }, valor) : ''}
     ${sim ? `<div class="cartao" style="margin-top:14px;background:var(--bg)"><h2 style="font-size:14px;font-weight:800">Em 1 ano, com os índices de hoje</h2>
@@ -457,7 +463,7 @@ export function modalMov(E, A, m) {
       <label class="campo"><span>Data</span><input type="date" class="entrada" data-campo="data" value="${esc(f.data)}"></label>
     </div>
     ${f.tipo === 'Resgate' && !ed ? `<button class="link" style="margin-top:8px" data-a="resgateTotal">Resgatar tudo (${brl(r.liquido)})</button>` : ''}
-    <label class="campo"><span>${f.tipo === 'Resgate' ? 'Cai na conta' : 'Sai da conta'}</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${contas.map((c) => `<option value="${c.id}" ${f.conta === c.id ? 'selected' : ''}>${esc(A.nomeConta(c.id))} (${esc(A.nome(c.dono))})</option>`).join('')}</select></label>
+    <label class="campo"><span>${f.tipo === 'Resgate' ? 'Cai na conta' : 'Sai da conta'}</span><select class="entrada" data-campo="conta"><option value="">— nenhuma —</option>${opcoesContas(A, contas, f.conta)}</select></label>
     ${est}${blocoAcertoMov(E, A, inv, f, valor)}
     <button class="btn btn-pri btn-largo" style="margin-top:18px" data-a="salvarMov" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : ed ? 'Salvar alterações' : f.tipo === 'Resgate' ? 'Registrar resgate' : 'Registrar aporte'}</button>
     ${ed ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
@@ -554,7 +560,7 @@ export function telaPlanejamento(E) {
     ${prev.length ? `<p class="muted" style="font-size:12.5px;margin:8px 4px 0">Faltam lançar ${prev.length} · ${sens(brl(totPrev))}${!ehFam ? ' (sua parte)' : ''}</p>` : ''}`;
 
   const relat = `<a class="item" href="#/relatorios" style="margin-top:12px;border-radius:var(--radius);background:var(--surf)">${ic('grafico', 20, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">Relatórios</span><span class="sub">Por grupo, mês a mês e quem pagou</span></span>${ic('seta', 18)}</a>`;
-  const corpo = `<div class="grade"><div>${hero}<div style="margin-top:12px">${barra}</div><div style="margin-top:12px">${tabela}</div>${relat}</div><div>${metas}${fixas}</div></div>`;
+  const corpo = `<div class="grade"><div>${hero}<div style="margin-top:12px">${barra}</div></div><div class="plan-tabela">${tabela}${relat}</div><div>${metas}${fixas}</div></div>`;
   return casca(E, 'Planejamento', corpo, { acoes: seletorMes(E) });
 }
 
@@ -566,21 +572,6 @@ export function modalMeta(E, A, m) {
   const meta = m.editando ? R.porId(db.metas || [], m.editando) : null;
   const multi = !E.banco || E.banco.demo || E.banco.temCampo('metas', 'categorias');
   const sel = f.cats || [];
-  const despesas = R.porOrdem(db, db.categorias.filter((c) => c.tipo !== 'Receita' && R.ativo(c)));
-  const grupos = despesas.filter((c) => !c.grupo);
-  const abertos = f.abertos || [];
-  const chk = (on, fraco) => `<span class="check ${on ? 'on' : ''}" ${fraco ? 'style="opacity:.55"' : ''}>${on ? ic('ok', 13, 'stroke-width="3.2"') : ''}</span>`;
-  const linhas = grupos.map((g) => {
-    const subs = despesas.filter((c) => c.grupo === g.id);
-    const gSel = sel.includes(g.id);
-    const algumaSub = subs.some((c) => sel.includes(c.id));
-    const aberto = abertos.includes(g.id) || (algumaSub && !abertos.includes('-' + g.id));
-    return `<div style="display:flex;align-items:center;border-top:1px solid var(--line)">
-        <button class="opcao" style="flex:1;border:0;border-radius:0;background:none;margin-top:0" data-a="metaCat" data-id="${g.id}" aria-checked="${gSel}">${chk(gSel)}<span style="flex:1;text-align:left"><span style="display:block;font-weight:700">${esc(g.nome)}</span>${subs.length ? `<span class="muted" style="font-size:12px">${gSel ? 'grupo inteiro' : algumaSub ? subs.filter((c) => sel.includes(c.id)).map((c) => esc(c.nome)).join(', ') : subs.length + ' subcategorias'}</span>` : ''}</span></button>
-        ${subs.length ? `<button class="icone-btn" data-a="metaAbrirGrupo" data-id="${g.id}" aria-label="${aberto ? 'Esconder' : 'Ver'} subcategorias de ${esc(g.nome)}" style="transform:rotate(${aberto ? 90 : 0}deg)">${ic('seta', 18)}</button>` : ''}
-      </div>
-      ${aberto ? subs.map((c) => `<button class="opcao" style="width:100%;border:0;border-radius:0;background:none;margin-top:0;padding-left:40px" data-a="metaCat" data-id="${c.id}" aria-checked="${gSel || sel.includes(c.id)}" ${gSel ? 'disabled' : ''}>${chk(gSel || sel.includes(c.id), gSel)}<span style="flex:1;text-align:left;font-size:14.5px">${esc(c.nome)}</span></button>`).join('') : ''}`;
-  }).join('');
   const nomesSel = sel.map((id) => { const c = R.porId(db.categorias, id); return c ? c.nome + (R.ehGrupo(db, id) ? ' (grupo)' : '') : ''; }).filter(Boolean);
   let info = '';
   if (sel.length && f.dono) {
@@ -593,10 +584,8 @@ export function modalMeta(E, A, m) {
   const corpo = `
     <div class="campo"><span>De quem é</span>${meta ? `<div><span class="pill ${A.classe(f.dono)}">${esc(A.nome(f.dono))}</span></div>` : `<div class="donos" role="radiogroup">${donos.map((p) => `<button role="radio" class="${A.classe(p.id)}" aria-checked="${f.dono === p.id}" data-a="metaDono" data-id="${p.id}">${esc(p.nome)}</button>`).join('')}</div>`}
       <span class="muted" style="font-size:12px;margin-top:4px">${f.dono && fam && f.dono === fam.id ? 'Gastos da casa, pagos por qualquer um.' : 'Conta só os gastos pessoais de ' + esc(A.nome(f.dono)) + '.'}</span></div>
-    <div class="campo"><span>${multi ? 'Categorias' : 'Categoria'}</span>
-      <div style="border:1px solid var(--line);border-radius:14px;overflow:hidden;max-height:340px;overflow-y:auto" class="rolar">${linhas}</div>
-      ${!multi ? '<span class="muted" style="font-size:12px;margin-top:6px">Atualize a planilha (script de montagem) para usar juntar várias categorias.</span>' : ''}
-      ${nomesSel.length ? `<span style="font-size:13px;margin-top:6px"><span class="muted">Escolhidas:</span> <strong>${esc(nomesSel.join(' + '))}</strong></span>` : ''}</div>
+    <div class="campo"><span>${multi ? 'Categorias' : 'Categoria'}</span>${botaoCategoria(E, sel, multi ? 'Escolher uma ou mais' : 'Escolher categoria')}
+      ${!multi ? '<span class="muted" style="font-size:12px;margin-top:6px">Atualize a planilha (script de montagem) para juntar várias categorias.</span>' : ''}</div>
     ${multi && sel.length > 1 ? `<label class="campo"><span>Nome da meta (opcional)</span><input class="entrada" data-campo="nome" value="${esc(f.nome || '')}" placeholder="${esc(nomesSel.map((n) => n.replace(' (grupo)', '')).join(' + '))}"></label>` : ''}
     <label class="campo"><span>Limite no mês (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="valor" value="${esc(f.valor)}" placeholder="0,00"></label>
     ${info}
@@ -639,8 +628,8 @@ export function telaRelatorios(E) {
       const d = delta(x.mes, x.media);
       const aberto = !sub && E.relGrupo === x.g;
       return `<${sub ? 'div' : `button data-a="relGrupo" data-id="${esc(x.g)}" aria-expanded="${aberto}"`} class="item" style="flex-direction:column;align-items:stretch;gap:6px;${sub ? 'padding-left:30px;background:none' : ''}" title="${esc(nome)}: ${brl(x.mes)} em ${nomeM} · média ${brl(x.media)}">
-        <span style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;text-align:left"><span class="${sub ? '' : 'titulo'}" style="${sub ? 'font-size:14px' : ''}">${sub ? '' : `<span style="display:inline-block;transform:rotate(${aberto ? 90 : 0}deg);color:var(--muted);margin-right:4px">›</span>`}${esc(nome)}</span>
-          <span style="white-space:nowrap;font-variant-numeric:tabular-nums"><strong>${sens(brl(x.mes))}</strong>${d === null ? '' : ` <span class="muted" style="font-size:12px">${d > 0 ? '+' : ''}${d}%</span>`}</span></span>
+        <span style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;text-align:left"><span class="${sub ? '' : 'titulo'}" style="${sub ? 'font-size:14px' : ''}">${esc(nome)}</span>
+          <span style="white-space:nowrap;font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;gap:6px"><strong>${sens(brl(x.mes))}</strong>${d === null ? '' : ` <span class="muted" style="font-size:12px">${d > 0 ? '+' : ''}${d}%</span>`}${sub ? '' : `<span style="display:inline-flex;color:var(--muted);transform:rotate(${aberto ? 90 : 0}deg)">${ic('seta', 16)}</span>`}</span></span>
         <span style="position:relative;height:${sub ? 8 : 10}px;border-radius:4px;background:var(--surf2)">
           <span style="position:absolute;left:0;top:0;bottom:0;width:${pctW(x.mes)};border-radius:0 4px 4px 0;background:${sub ? 'var(--soft)' : 'var(--accent)'};${sub ? 'opacity:.7' : ''}"></span>
           ${x.media > 0.005 ? `<span style="position:absolute;top:-3px;bottom:-3px;left:${pctW(x.media)};width:2px;margin-left:-1px;background:var(--text)"></span>` : ''}
@@ -654,10 +643,10 @@ export function telaRelatorios(E) {
       return [...cats].map((c) => ({ g: c, mes: arred(doMes.get(c) || 0), media: arred(media((k) => k === c)) })).sort((a, b) => b.mes - a.mes);
     };
     const nomeDe = (id) => (id ? (R.porId(db.categorias, id) || {}).nome || '?' : 'Sem categoria');
-    corpo = `<div class="cartao" style="margin-bottom:12px"><div class="muted" style="font-size:13px">${ehFam ? 'Gastos da família' : 'Seus gastos'} lançados em ${esc(nomeM)}</div>
+    corpo = `<div class="rel-grupo"><div class="cartao" style="margin-bottom:12px"><div class="muted" style="font-size:13px">${ehFam ? 'Gastos da família' : 'Seus gastos'} lançados em ${esc(nomeM)}</div>
         <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px"><span style="font-size:26px;font-weight:800">${sens(brl(total))}</span><span class="muted" style="font-size:13px">média dos ${porAnt.length || 0} meses anteriores ${sens(brl(totalMedia))}</span></div>
         <div style="display:flex;gap:16px;margin-top:10px;font-size:12.5px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--accent);margin-right:6px"></span>Este mês</span><span><span style="display:inline-block;width:2px;height:12px;background:var(--text);margin-right:6px;vertical-align:-2px"></span>Média dos meses anteriores</span></div></div>
-      <div class="lista">${linhas.length ? linhas.map((x) => barra(x, nomeDe(x.g)) + (E.relGrupo === x.g ? subsDe(x.g).map((y) => barra(y, nomeDe(y.g), true)).join('') : '')).join('') : `<div class="vazio">Nenhum gasto em ${esc(nomeM)} nem nos meses anteriores.</div>`}</div>`;
+      <div class="lista">${linhas.length ? linhas.map((x) => barra(x, nomeDe(x.g)) + (E.relGrupo === x.g ? subsDe(x.g).map((y) => barra(y, nomeDe(y.g), true)).join('') : '')).join('') : `<div class="vazio">Nenhum gasto em ${esc(nomeM)} nem nos meses anteriores.</div>`}</div></div>`;
   }
 
   if (aba === 'meses') {
@@ -694,7 +683,7 @@ export function telaRelatorios(E) {
     const escala = Math.max(1, ...linhas.map((l) => Math.max(l.pagou, l.parte)));
     const w = (v) => Math.max(0, Math.min(100, (v / escala) * 100)).toFixed(1) + '%';
     const r = ac.resultado;
-    corpo = `<div class="cartao"><div class="muted" style="font-size:13px">Gastos da família em ${esc(nomeM)}: <strong style="color:var(--text)">${sens(brl(ac.det.famTotal))}</strong>, divididos ${A.ps.map((x) => esc(x.nome) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ')}</div>
+    corpo = `<div class="rel-quem"><div class="cartao"><div class="muted" style="font-size:13px">Gastos da família em ${esc(nomeM)}: <strong style="color:var(--text)">${sens(brl(ac.det.famTotal))}</strong>, divididos ${A.ps.map((x) => esc(x.nome) + ' ' + Math.round((fr[x.id] || 0) * 100) + '%').join(' · ')}</div>
       ${linhas.map((l) => { const cor = COR_PESSOA[A.classe(l.x.id)] || 'var(--accent)'; const dif = arred(l.pagou - l.parte); return `<div style="margin-top:16px">
         <div style="display:flex;justify-content:space-between;align-items:baseline"><strong>${esc(l.x.nome)}</strong><span style="font-size:13px;${Math.abs(dif) < 0.01 ? 'color:var(--muted)' : ''}">${Math.abs(dif) < 0.01 ? 'pagou a parte certa' : (dif > 0 ? 'pagou ' + sens(brl(dif)) + ' a mais' : 'pagou ' + sens(brl(-dif)) + ' a menos')}</span></div>
         <div title="${esc(l.x.nome)} pagou ${brl(l.pagou)}" style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="muted" style="font-size:12px;width:44px">Pagou</span><span style="flex:1;height:12px;border-radius:4px;background:var(--surf2);overflow:hidden"><span style="display:block;height:100%;width:${w(l.pagou)};background:${cor};border-radius:0 4px 4px 0"></span></span><span style="font-size:13px;width:96px;text-align:right;font-variant-numeric:tabular-nums">${sens(brl(l.pagou))}</span></div>
@@ -702,7 +691,7 @@ export function telaRelatorios(E) {
       </div>`; }).join('')}
       <div style="display:flex;gap:16px;margin-top:14px;font-size:12px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--soft);margin-right:6px"></span>Quanto pagou dos gastos da família</span><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--soft) 0 2px,transparent 2px 5px);outline:1px solid var(--soft);outline-offset:-1px;margin-right:6px"></span>Parte que cabe a cada um</span></div>
     </div>
-    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto de ${esc(nomeM)}</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a>`;
+    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto de ${esc(nomeM)}</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a></div>`;
     if (!p1 || !p2) corpo = '<div class="vazio">Precisa de duas pessoas na aba Pessoas.</div>';
   }
   return casca(E, 'Relatórios', abas + corpo, { voltar: 'planejamento', acoes: seletorMes(E) });

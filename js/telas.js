@@ -207,7 +207,7 @@ const MENU = [
   ['', [['inicio', 'Início', 'inicio'], ['transacoes', 'Transações', 'transacoes'], ['planejamento', 'Planejamento', 'planejar'], ['relatorios', 'Relatórios', 'grafico']]],
   ['Fechamento do mês', [['conferencia', 'Conferência', 'ok'], ['faturas', 'Faturas', 'faturas'], ['acerto', 'Acerto', 'acerto']]],
   ['Patrimônio', [['investimentos', 'Investimentos', 'investir']]],
-  ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['tags', 'Tags', 'etiqueta'], ['rendas', 'Rendas e divisão', 'rendas']]],
+  ['Cadastros', [['contas', 'Contas e cartões', 'contas'], ['fixas', 'Contas fixas', 'repetir'], ['categorias', 'Categorias', 'etiqueta'], ['tags', 'Tags', 'hash'], ['rendas', 'Rendas e divisão', 'rendas']]],
 ];
 
 export function casca(E, titulo, corpo, opcoes = {}) {
@@ -299,7 +299,7 @@ export function telaInicio(E) {
   const acertoCard = (() => {
     const r = ac.resultado;
     if (!r) return `<a class="acerto-hero zerado" href="#/acerto">${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong><span style="display:block;font-size:13px;color:var(--ok-txt)">Ninguém deve nada por enquanto.</span></span>${ic('seta', 18)}</a>`;
-    return `<a class="acerto-hero" href="#/acerto">${A.avatar(r.de, 40)}${ic('acerto', 20, 'style="color:var(--f)"')}${A.avatar(r.para, 40)}<span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto do mês até agora</span><strong style="font-size:15px">${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>${ic('seta', 18)}</a>`;
+    return `<a class="acerto-hero" href="#/acerto">${A.avatar(r.de, 30)}${ic('acerto', 16, 'style="color:var(--f)"')}${A.avatar(r.para, 30)}<span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto do mês até agora</span><strong style="font-size:15px">${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>${ic('seta', 18)}</a>`;
   })();
 
   const dbPrev = R.comPrevistos(db, mes);
@@ -365,7 +365,7 @@ export function telaInicio(E) {
     ${seletorMes(E)}${botaoOlho(E)}<button class="icone-btn so-cel" data-a="personalizarInicio" aria-label="Personalizar o Início">${ic('ajustes', 20)}</button>
     <button class="btn btn-peq btn-sec so-pc" data-a="personalizarInicio">${ic('ajustes', 16, 'style="vertical-align:-3px;margin-right:6px"')}Personalizar</button>`;
   const corpo = `${faixa}<div class="grade grade-inicio">${html}</div>`;
-  const titulo = `<span class="so-cel-i"><button class="so-cel icone-btn" style="display:inline-flex;vertical-align:middle;margin:-6px 6px -6px -6px;width:auto;padding:0 4px" data-a="ir" data-v="perfis" aria-label="Trocar perfil">${A.avatar(p, 34)}</button>${ehFam ? 'Família' : 'Olá, ' + esc(A.nome(p))}</span><span class="so-pc">Início</span>`;
+  const titulo = `<span class="so-cel-i ola"><button class="so-cel icone-btn" style="display:inline-flex;vertical-align:middle;margin:-6px 6px -6px -6px;width:auto;padding:0 4px" data-a="ir" data-v="perfis" aria-label="Trocar perfil">${A.avatar(p, 34)}</button>${ehFam ? 'Família' : 'Olá, ' + esc(A.nome(p))}</span><span class="so-pc">Início</span>`;
   return casca(E, titulo, corpo, { acoes });
 }
 
@@ -403,12 +403,12 @@ export function telaTransacoes(E) {
   const n = filtrosAtivos(f);
   const corpo = `<div class="chips rolavel" role="group" aria-label="De quem" style="margin-bottom:8px">${QUEM.map(([id, nm]) => `<button class="chip" aria-pressed="${id === 'tudo' ? !quemSel(f).length : quemSel(f).includes(id)}" data-a="filtroQuem" data-v="${id}">${nm}</button>`).join('')}</div>
     <div class="chips rolavel" role="group" aria-label="Tipo" style="margin-bottom:10px">${TIPOS.map(([id, nm]) => `<button class="chip" aria-pressed="${f.tipo === id}" data-a="filtro" data-c="tipo" data-v="${id}">${nm}</button>`).join('')}
-      <button class="chip" aria-pressed="${n > 0}" data-a="abrirFiltros">${ic('camadas', 16, 'style="vertical-align:-3px;margin-right:4px"')}Filtros${n ? ' (' + n + ')' : ''}</button>
-      ${n ? '<button class="link" style="margin-left:4px" data-a="limparFiltros">Limpar</button>' : ''}</div>
+      ${n ? `<button class="chip" aria-pressed="true" data-a="limparFiltros">${ic('fechar', 14, 'style="vertical-align:-2px;margin-right:4px"')}Limpar ${n} filtro${n === 1 ? '' : 's'}</button>` : ''}</div>
     <div class="info-caixa" style="display:flex;gap:18px;flex-wrap:wrap;background:var(--surf)"><span><span class="muted">Gastos </span><strong>${sens(brl(gastos))}</strong></span><span><span class="muted">Entradas </span><strong class="rec">${sens(brl(receitas))}</strong></span><span class="muted">${reais.length} lançamento${reais.length === 1 ? '' : 's'}${itens.length > reais.length ? ' + ' + (itens.length - reais.length) + ' previsto' + (itens.length - reais.length === 1 ? '' : 's') : ''}</span></div>
     <div style="margin-top:8px">${cel}${pc}</div>`;
   const faixa = periodo ? `<div style="display:flex;align-items:center;gap:6px;height:40px;padding:0 6px 0 12px;border-radius:12px;background:var(--surf)"><button class="link" style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap" data-a="abrirFiltros">${f.de ? dataBR(f.de) : 'início'} – ${f.ate ? dataBR(f.ate) : 'hoje'}</button><button class="icone-btn" style="width:30px;height:30px" data-a="limparPeriodo" aria-label="Voltar ao mês">${ic('fechar', 14)}</button></div>` : '';
-  return casca(E, 'Transações', corpo, { acoes: periodo ? faixa : seletorMes(E) });
+  const botaoFiltros = `<button class="icone-btn com-badge" data-a="abrirFiltros" aria-label="Filtros${n ? ' (' + n + ' ligados)' : ''}">${ic('filtro', 20)}${n ? `<span class="badge">${n}</span>` : ''}</button>`;
+  return casca(E, 'Transações', corpo, { acoes: (periodo ? faixa : seletorMes(E)) + botaoFiltros });
 }
 
 // ---------------------------------------------------------------- acerto
@@ -466,9 +466,9 @@ export function telaContas(E) {
   const grupo = (p) => {
     const cs = db.contas.filter((c) => c.dono === p.id && R.ativo(c));
     const ks = db.cartoes.filter((c) => c.dono === p.id && R.ativo(c));
-    return `<div class="secao-titulo"><span style="color:var(--${{ gio: 'g', dem: 'd', fam: 'f' }[A.classe(p.id)]}-txt)">${p.tipo === 'Família' ? 'Da família' : (A.classe(p.id) === 'gio' ? 'Da ' : 'Do ') + esc(p.nome)}</span></div>
-      <div class="lista">${cs.map((c) => `<button class="item" data-a="editarConta" data-id="${c.id}"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${esc(c.tipo || 'Conta')}</span></span><span class="valor">${sens(brl(R.saldoConta(db, c)))}</span></button>`).join('')}
-      ${ks.map((c) => `<button class="item" data-a="editarCartao" data-id="${c.id}"><span class="chip-cor" style="background:${corConta(c.cor)}">${ic('cartao', 18)}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">Fecha dia ${c.fecha} · vence dia ${c.vence}${R.pagaPorDe(db, c) !== c.dono ? ' · paga: ' + esc(A.nome(R.pagaPorDe(db, c))) : ''}${c.limite ? ' · limite ' + sens(brl(c.limite)) : ''}</span></span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`).join('')}
+    return `<div class="secao-titulo"><h2 style="color:var(--${{ gio: 'g', dem: 'd', fam: 'f' }[A.classe(p.id)]}-txt)">${p.tipo === 'Família' ? 'Da família' : (A.classe(p.id) === 'gio' ? 'Da ' : 'Do ') + esc(p.nome)}</h2></div>
+      <div class="lista">${cs.map((c) => `<button class="item" data-a="editarConta" data-id="${c.id}"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${esc(c.tipo || 'Conta')}</span></span><span class="valor">${sens(brl(R.saldoConta(db, c)))}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`).join('')}
+      ${ks.map((c) => `<button class="item" data-a="editarCartao" data-id="${c.id}"><span class="chip-cartao" style="background:${corConta(c.cor)}"><span></span></span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">Fecha dia ${c.fecha} · vence dia ${c.vence}${R.pagaPorDe(db, c) !== c.dono ? ' · paga: ' + esc(A.nome(R.pagaPorDe(db, c))) : ''}</span>${c.limite ? `<span class="sub">Limite ${sens(brl(c.limite))}</span>` : ''}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`).join('')}
       ${!cs.length && !ks.length ? '<div class="vazio">Nada cadastrado.</div>' : ''}</div>`;
   };
   const arquivados = [...db.contas, ...db.cartoes].filter((c) => !R.ativo(c));
@@ -525,7 +525,7 @@ export function telaFaturas(E) {
   const ehAberta = fSel.id === aberta.id;
   const famT = compras.filter((t) => A.fam && t.dono === A.fam.id).reduce((s, t) => s + (t.tipo === R.TIPO.estorno ? -t.valor : t.valor), 0);
   const pagos = fSel.virtual ? 0 : db.transacoes.filter((t) => t.tipo === R.TIPO.fatura && t.fatura === fSel.id).reduce((s, t) => s + t.valor, 0);
-  const corpo = `${tabsCartao}
+  const corpo = `<div class="tela-fatura"><div>${tabsCartao}
     <div class="cartao">
       <div style="display:flex;align-items:center;gap:8px">
         <button class="icone-btn" data-a="selFatura" data-id="${ant ? ant.id : ''}" ${ant ? '' : 'disabled style="opacity:.3"'} aria-label="Fatura anterior">${ic('esq', 18)}</button>
@@ -536,10 +536,10 @@ export function telaFaturas(E) {
       <div class="muted" style="font-size:13px;margin-top:6px">Fecha ${dataBR(fSel.fechamento)} · vence ${dataBR(fSel.vencimento)} ${fSel.virtual ? '' : `<button class="link" data-a="alterarFechamento" data-id="${fSel.id}">alterar</button>`}</div>
       ${compras.length ? `<div class="chips" style="margin-top:10px"><span class="pill fam">Família ${sens(brl(famT))}</span><span class="pill neutra">Pessoal ${sens(brl(total - famT))}</span>${pagos ? `<span class="pill ok">Pago ${sens(brl(pagos))}</span>` : ''}</div>` : ''}
       ${!fSel.virtual && sit !== 'Paga' && total > 0 ? `<button class="btn btn-pri btn-largo" style="margin-top:14px" data-a="pagarFatura" data-id="${fSel.id}">Pagar fatura</button>` : ''}
-    </div>
+    </div></div><div>
     <div class="secao-titulo"><h2>${compras.length} compra${compras.length === 1 ? '' : 's'}</h2></div>
     ${compras.length ? porDia(A, compras.map((t) => ({ k: 'trn', t })), E) : '<div class="lista"><div class="vazio">Nenhuma compra nesta fatura ainda.</div></div>'}
-    ${previstas.length ? `<div class="secao-titulo" style="margin-top:18px"><h2>${previstas.length} prevista${previstas.length === 1 ? '' : 's'} (contas fixas)</h2><span>${sens(brl(totPrev))}</span></div>${porDia(A, previstas.map((t) => ({ k: 'prev', t })), E)}` : ''}`;
+    ${previstas.length ? `<div class="secao-titulo" style="margin-top:18px"><h2>${previstas.length} prevista${previstas.length === 1 ? '' : 's'} (contas fixas)</h2><span>${sens(brl(totPrev))}</span></div>${porDia(A, previstas.map((t) => ({ k: 'prev', t })), E)}` : ''}</div></div>`;
   return casca(E, 'Faturas', corpo, { voltar: 'mais' });
 }
 
@@ -585,20 +585,16 @@ export function telaMais(E) {
       <button class="item" data-a="ir" data-v="perfis">${A.avatar(E.perfil, 36)}<span class="principal-txt"><span class="titulo">${esc(A.nome(E.perfil))}</span><span class="sub">Trocar perfil</span></span>${ic('trocar', 18)}</button>
     </div>
     <div class="secao-titulo"><h2>Planejamento</h2></div>
-    <div class="lista">${link('planejamento', 'planejar', 'Planejamento', 'Metas, previsto e planejado do mês')}${link('relatorios', 'grafico', 'Relatórios', 'Por grupo, mês a mês e quem pagou')}</div>
+    <div class="lista">${link('relatorios', 'grafico', 'Relatórios', 'Por grupo, mês a mês e quem pagou')}</div>
     <div class="secao-titulo"><h2>Fechamento do mês</h2></div>
     <div class="lista">${link('conferencia', 'ok', 'Conferência', 'Faturas e saldos × banco')}${link('faturas', 'faturas', 'Faturas', 'Compras por fatura, pagar e alterar fechamento')}${link('acerto', 'acerto', 'Acerto', 'Quem deve quanto no mês')}</div>
     <div class="secao-titulo"><h2>Patrimônio</h2></div>
     <div class="lista">${link('investimentos', 'investir', 'Investimentos', 'Valor líquido, IR e índices do dia')}</div>
     <div class="secao-titulo"><h2>Cadastros</h2></div>
-    <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('categorias', 'etiqueta', 'Categorias', 'Criar, renomear, mover e arquivar')}${link('tags', 'etiqueta', 'Tags', 'Renomear, juntar e excluir')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
+    <div class="lista">${link('contas', 'contas', 'Contas e cartões')}${link('fixas', 'repetir', 'Contas fixas', 'Aluguel, internet, assinaturas, salário')}${link('categorias', 'etiqueta', 'Categorias', 'Criar, renomear, mover e arquivar')}${link('tags', 'hash', 'Tags', 'Renomear, juntar e excluir')}${link('rendas', 'rendas', 'Rendas e divisão')}</div>
     <div class="secao-titulo"><h2>App</h2></div>
     <div class="lista" style="margin-bottom:8px">${link('config', 'config', 'Configurações', 'Tema, perfil ao abrir, avisos e planilha')}</div>
     <div class="lista">
-      <button class="item" data-a="alternarOcultar">${ic(E.ocultar ? 'olhoFechado' : 'olho', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">${E.ocultar ? 'Mostrar valores' : 'Esconder valores'}</span></span></button>
-      <button class="item" data-a="recarregar">${ic('repetir', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">Atualizar dados da planilha</span><span class="sub">${esc(E.banco ? E.banco.titulo : '')}</span></span></button>
-      ${E.banco && !E.banco.demo ? `<a class="item" href="https://docs.google.com/spreadsheets/d/${esc(E.banco.id)}" target="_blank" rel="noopener">${ic('planilha', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">Abrir a planilha</span></span></a>` : ''}
-      <button class="item" data-a="trocarPlanilha">${ic('planilha', 22, 'style="color:var(--muted)"')}<span class="principal-txt"><span class="titulo">${E.banco && E.banco.demo ? 'Sair da demonstração' : 'Trocar de planilha'}</span></span></button>
       <button class="item" data-a="sair">${ic('sair', 22, 'style="color:var(--despesa)"')}<span class="principal-txt"><span class="titulo">Sair</span><span class="sub">${esc(E.email || '')}</span></span></button>
     </div>
     <p class="muted" style="text-align:center;font-size:12px;margin-top:20px">Economiau ${E.versao}</p>`;
@@ -625,8 +621,8 @@ export function telaFixas(E) {
   };
   const corpo = `${v18 ? '' : '<div class="aviso-caixa" style="margin-bottom:12px">Atualize a planilha (script de montagem) para usar isto.</div>'}
     <div class="secao-titulo"><h2>Em ${esc(nomeMesAno(E.mes).split(' ')[0].toLowerCase())}</h2><span>${prev.length} falta${prev.length === 1 ? '' : 'm'} lançar</span></div>
-    <div class="lista">${ativas.length ? ativas.map(item).join('') : '<div class="vazio">Nenhuma conta fixa. Ligue “Repetir todo mês” num lançamento para criar.</div>'}</div>
-    ${outras.length ? `<button class="secao-titulo" style="width:calc(100% - 8px);background:none;border:0;cursor:pointer;font-family:inherit;padding:0" data-a="verEncerradas" aria-expanded="${!!E.verEncerradas}"><span>Encerradas ou ainda não começaram (${outras.length})</span><span style="display:inline-flex;transform:rotate(${E.verEncerradas ? 90 : 0}deg);transition:transform .15s">${ic('seta', 16)}</span></button>${E.verEncerradas ? `<div class="lista">${outras.map(item).join('')}</div>` : ''}` : ''}`;
+    <div class="lista colunas">${ativas.length ? ativas.map(item).join('') : '<div class="vazio">Nenhuma conta fixa. Ligue “Repetir todo mês” num lançamento para criar.</div>'}</div>
+    ${outras.length ? `<button class="secao-titulo" style="width:calc(100% - 8px);background:none;border:0;cursor:pointer;font-family:inherit;padding:0" data-a="verEncerradas" aria-expanded="${!!E.verEncerradas}"><span>Encerradas ou ainda não começaram (${outras.length})</span><span style="display:inline-flex;transform:rotate(${E.verEncerradas ? 90 : 0}deg);transition:transform .15s">${ic('seta', 16)}</span></button>${E.verEncerradas ? `<div class="lista colunas">${outras.map(item).join('')}</div>` : ''}` : ''}`;
   return casca(E, 'Contas fixas', corpo, { voltar: 'mais', acoes: seletorMes(E) });
 }
 
@@ -662,8 +658,8 @@ export function telaCategorias(E) {
   const bloco = (g) => {
     const subs = R.porOrdem(db, db.categorias.filter((c) => c.grupo === g.id && R.ativo(c)));
     return `<div class="bloco"><div class="lista">
-      <button class="item" data-a="editarCategoria" data-id="${g.id}"><span class="principal-txt"><span class="titulo" style="font-weight:800">${esc(g.nome)}</span><span class="sub">${tipo === 'Despesa' && subs.length ? subs.length + ' subcategoria' + (subs.length === 1 ? '' : 's') + ' · ' + (() => { const n = usoCategoria(db, g.id) + subs.reduce((t, c) => t + usoCategoria(db, c.id), 0); return n ? n + ' lançamento' + (n === 1 ? '' : 's') + ' no grupo' : 'sem uso'; })() : usoTxt(g.id)}</span></span>${ic('lapis', 18, 'style="color:var(--muted)"')}</button>
-      ${subs.map((c) => `<button class="item" style="padding-left:32px" data-a="editarCategoria" data-id="${c.id}"><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${usoTxt(c.id)}</span></span>${ic('lapis', 16, 'style="color:var(--muted)"')}</button>`).join('')}
+      <button class="item" data-a="editarCategoria" data-id="${g.id}"><span class="principal-txt"><span class="titulo" style="font-weight:800">${esc(g.nome)}</span><span class="sub">${tipo === 'Despesa' && subs.length ? subs.length + ' subcategoria' + (subs.length === 1 ? '' : 's') + ' · ' + (() => { const n = usoCategoria(db, g.id) + subs.reduce((t, c) => t + usoCategoria(db, c.id), 0); return n ? n + ' lançamento' + (n === 1 ? '' : 's') + ' no grupo' : 'sem uso'; })() : usoTxt(g.id)}</span></span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>
+      ${subs.map((c) => `<button class="item" style="padding-left:32px" data-a="editarCategoria" data-id="${c.id}"><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${usoTxt(c.id)}</span></span>${ic('seta', 16, 'style="color:var(--muted)"')}</button>`).join('')}
       ${tipo === 'Despesa' ? `<button class="item" style="padding-left:32px;color:var(--accent);font-weight:700" data-a="novaCategoria" data-id="${g.id}">${ic('mais_', 16)}<span style="font-size:14px">Subcategoria em ${esc(g.nome)}</span></button>` : ''}
     </div></div>`;
   };
@@ -676,7 +672,7 @@ export function telaCategorias(E) {
 
 export function telaTags(E) {
   const uso = R.usoDasTags(E.db);
-  const corpo = `    <div class="lista" style="margin-top:12px">${uso.length ? uso.map((x) => `<button class="item" data-a="editarTag" data-v="${esc(x.tag)}"><span class="principal-txt"><span class="titulo">#${esc(x.tag)}</span><span class="sub">${x.n} lançamento${x.n === 1 ? '' : 's'}</span></span>${ic('lapis', 18, 'style="color:var(--muted)"')}</button>`).join('') : '<div class="vazio">Nenhuma tag ainda. Elas aparecem aqui depois que você usar uma num lançamento.</div>'}</div>`;
+  const corpo = `    <div class="lista colunas" style="margin-top:12px">${uso.length ? uso.map((x) => `<button class="item" data-a="editarTag" data-v="${esc(x.tag)}"><span class="principal-txt"><span class="titulo">#${esc(x.tag)}</span><span class="sub">${x.n} lançamento${x.n === 1 ? '' : 's'}</span></span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`).join('') : '<div class="vazio">Nenhuma tag ainda. Elas aparecem aqui depois que você usar uma num lançamento.</div>'}</div>`;
   return casca(E, 'Tags', corpo, { voltar: 'mais' });
 }
 
@@ -752,6 +748,53 @@ export const interruptor = (on, acao, rotulo, extra = '') => `<button class="cha
 // Segmentado: escolha de 2 ou 3 opções dentro de um formulário
 export const segmento = (rotulo, ops, atual, acao, extra = '') => `<div class="segmento" role="radiogroup" aria-label="${esc(rotulo)}">${ops.map(([v, n]) => `<button role="radio" aria-checked="${String(atual) === String(v)}" data-a="${acao}" data-v="${v}" ${extra}>${n}</button>`).join('')}</div>`;
 const marcado = (on) => `<span class="check">${on ? ic('ok', 13, 'stroke-width="3.2"') : ''}</span>`;
+
+// Linha que abre o seletor de categorias (filtros e nova meta)
+export function botaoCategoria(E, ids, vazio) {
+  const db = E.db;
+  const nomes = ids.map((id) => { const c = R.porId(db.categorias, id); if (!c) return ''; const g = c.grupo && R.porId(db.categorias, c.grupo); return g ? g.nome + ' › ' + c.nome : c.nome + (R.ehGrupo(db, c.id) ? ' (grupo inteiro)' : ''); }).filter(Boolean);
+  return `<button class="linha-escolha" data-a="abrirSeletor" data-v="categoria">${ic('etiqueta', 20)}<span class="txt">${nomes.length ? esc(nomes.join(' + ')) : `<span class="muted">${vazio}</span>`}</span>${ic('seta', 18)}</button>`;
+}
+
+// Lista única de categorias (lançamento, nova meta e filtros): busca no topo,
+// grupos como cabeçalho e subcategorias abaixo. grupoInteiro = o grupo também
+// pode ser escolhido; varios = marca vários; todas = linha "Todas" (filtros).
+export function listaCategorias(E, o) {
+  const db = E.db;
+  const sel = o.sel || [];
+  const cats = R.porOrdem(db, db.categorias.filter((c) => o.tipos.includes(c.tipo) && R.ativo(c)));
+  const grupos = cats.filter((c) => !c.grupo);
+  const subsDe = (g) => cats.filter((c) => c.grupo === g.id);
+  const marca = (on, fraco) => o.varios ? `<span class="check ${on ? 'on' : ''}" ${fraco ? 'style="opacity:.55"' : ''}>${on ? ic('ok', 13, 'stroke-width="3.2"') : ''}</span>` : marcado(on);
+  const linha = (c, nome, extra = '', cls = '') => {
+    const gSel = c.grupo && sel.includes(c.grupo) && o.varios;
+    const on = sel.includes(c.id) || gSel;
+    return `<button class="opcao ${cls}" role="${o.varios ? 'checkbox' : 'radio'}" aria-checked="${on}" data-a="${o.acao}" data-id="${c.id}" ${gSel ? 'disabled' : ''}>${marca(on, gSel)}<span class="cat-nome">${nome}${extra}</span></button>`;
+  };
+  const termo = semAcento(o.busca).trim();
+  let html = '';
+  if (termo) {
+    const achados = cats.filter((c) => semAcento(c.nome).includes(termo) || (c.grupo && semAcento((R.porId(db.categorias, c.grupo) || {}).nome).includes(termo)))
+      .filter((c) => c.grupo || o.grupoInteiro || !subsDe(c).length);
+    html = achados.map((c) => linha(c, esc(c.nome), c.grupo ? `<span class="cat-grupo-nome">${esc((R.porId(db.categorias, c.grupo) || {}).nome || '')}</span>` : subsDe(c).length ? '<span class="cat-grupo-nome">grupo inteiro</span>' : '')).join('')
+      || '<div class="vazio">Nenhuma categoria com esse nome.</div>';
+  } else {
+    if (o.todas) html += `<button class="opcao" role="radio" aria-checked="${!sel.length || !sel[0]}" data-a="${o.acao}" data-id="">${marcado(!sel.length || !sel[0])}<span class="cat-nome">Todas as categorias</span></button>`;
+    const porTipo = o.tipos.map((tipo) => {
+      const gs = grupos.filter((g) => g.tipo === tipo);
+      const corpo = gs.map((g) => {
+        const subs = subsDe(g);
+        if (!subs.length) return linha(g, esc(g.nome));
+        const cab = o.grupoInteiro ? linha(g, esc(g.nome), '<span class="cat-grupo-nome">grupo inteiro</span>', 'cat-cab') : `<div class="cat-cab-txt">${esc(g.nome)}</div>`;
+        return cab + subs.map((s) => linha(s, esc(s.nome), '', 'cat-sub')).join('');
+      }).join('');
+      return o.tipos.length > 1 && corpo ? `<div class="cat-secao">${tipo === 'Receita' ? 'Receitas' : 'Despesas'}</div>${corpo}` : corpo;
+    }).join('');
+    html += porTipo;
+  }
+  return `<label class="busca-cat">${ic('busca', 18)}<input class="entrada-limpa" data-busca-cat data-campo="buscaCat" value="${esc(o.busca || '')}" placeholder="Buscar categoria" autocomplete="off" aria-label="Buscar categoria"></label>
+    <div class="cat-lista">${html}</div>`;
+}
 
 const dl = (A, id) => (A.classe(id) === 'gio' ? 'dela' : 'dele');
 const sozinho = (A, id) => (A.classe(id) === 'gio' ? 'sozinha' : 'sozinho');
@@ -937,10 +980,10 @@ function modalLancar(E, A, m) {
 function modalMenu(E, A) {
   const op = (tipo, icone, nome, sub, cor) => `<button class="opcao" style="padding:14px" data-a="lancarTipo" data-v="${tipo}"><span class="chip-cor" style="background:${cor};color:#15181E">${ic(icone, 20, 'stroke-width="2.4"')}</span><span style="flex:1"><span style="display:block;font-weight:800;font-size:15.5px">${nome}</span><span class="muted" style="font-size:12.5px">${sub}</span></span>${ic('seta', 18)}</button>`;
   return folha('O que você quer lançar?', `<div style="margin-top:10px">
-    ${op('despesa', 'banco', 'Despesa', 'Pix, débito, boleto ou dinheiro', 'var(--despesa)')}
+    ${op('despesa', 'saida', 'Despesa', 'Pix, débito, boleto ou dinheiro', 'var(--despesa)')}
     ${op('cartao', 'cartao', 'Compra no cartão', 'À vista ou parcelada, cai na fatura', 'var(--accent)')}
     ${op('receita', 'rendas', 'Receita', 'Salário, freelance, reembolso', 'var(--receita)')}
-    ${op('transferencia', 'acerto', 'Transferência', 'Pagar fatura ou mandar para outra conta', 'var(--soft)')}
+    ${op('transferencia', 'transferir', 'Transferência', 'Pagar fatura ou mandar para outra conta', 'var(--soft)')}
   </div>`);
 }
 
@@ -961,7 +1004,7 @@ function modalFiltros(E, A) {
     <div class="campo"><span>Período</span>
       <div class="chips" style="margin-bottom:8px">${[['', 'Só o mês escolhido'], ['3m', 'Últimos 3 meses'], ['ano', 'Este ano'], ['12m', 'Últimos 12 meses']].map(([v, n]) => `<button class="chip" aria-pressed="${v === '' ? !(f.de || f.ate) : f.periodo === v && !!f.de}" data-a="filtroPeriodo" data-v="${v}">${n}</button>`).join('')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label><span class="muted" style="font-size:12px;display:block">De</span><input class="entrada" type="date" data-filtro="de" value="${esc(f.de || '')}"></label><label><span class="muted" style="font-size:12px;display:block">Até</span><input class="entrada" type="date" data-filtro="ate" value="${esc(f.ate || '')}"></label></div></div>
-    <label class="campo"><span>Categoria</span><select class="entrada" data-filtro="grupo"><option value="">Todas</option>${grupos.map((g) => `<option value="${g.id}" ${f.grupo === g.id ? 'selected' : ''}>${esc(g.nome)}${g.tipo === 'Despesa' ? ' (grupo todo)' : ''}</option>${R.porOrdem(db, db.categorias.filter((c) => c.grupo === g.id && R.ativo(c))).map((c) => `<option value="${c.id}" ${f.grupo === c.id ? 'selected' : ''}>&nbsp;&nbsp;&nbsp;${esc(c.nome)}</option>`).join('')}`).join('')}</select></label>
+    <div class="campo"><span>Categoria</span>${botaoCategoria(E, f.grupo ? [f.grupo] : [], 'Todas')}</div>
     <label class="campo"><span>Conta ou cartão</span><select class="entrada" data-filtro="origem"><option value="">Todos</option>${donosOrig.map(blocoOrig).join('')}${semDono.map(([id, n]) => `<option value="${id}" ${f.origem === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
     <div class="campo"><span>Tag</span>${tags.length ? `<div class="chips">${tags.map((x) => `<button class="chip" aria-pressed="${f.tag === x}" data-a="filtroTag" data-v="${esc(x)}">#${esc(x)}</button>`).join('')}</div>` : '<div class="muted" style="font-size:13px">Nenhuma tag criada ainda. Elas aparecem aqui depois que você usar uma num lançamento.</div>'}</div>
     <div class="campo" style="display:flex;align-items:center;gap:10px"><span style="flex:1;margin:0;font-size:15px;color:var(--text)">Só os não conferidos</span>${interruptor(f.naoConf, 'filtroNaoConf', 'Só os não conferidos')}</div>
@@ -985,17 +1028,21 @@ function modalFixa(E, A, m) {
 }
 
 function modalSeletor(E, A, m) {
-  const f = E.modalPai.form;
+  const f = E.modalPai.form || {};
   const db = E.db;
   let corpo = '';
-  if (m.campo === 'categoria') {
+  const paiTipo = E.modalPai.tipo;
+  if (m.campo === 'categoria' && paiTipo === 'meta') {
+    // nova meta: vários, grupo inteiro vale
+    const multi = !E.banco || E.banco.demo || E.banco.temCampo('metas', 'categorias');
+    corpo = listaCategorias(E, { tipos: ['Despesa'], sel: f.cats || [], varios: multi, grupoInteiro: true, busca: m.busca, acao: 'metaCat' })
+      + `<div class="folha-pe"><button class="btn btn-pri btn-largo" data-a="fecharSeletor">Pronto${(f.cats || []).length ? ' (' + f.cats.length + ')' : ''}</button></div>`;
+  } else if (m.campo === 'categoria' && paiTipo === 'filtros') {
+    corpo = listaCategorias(E, { tipos: ['Despesa', 'Receita'], sel: [E.filtros.grupo || ''], grupoInteiro: true, todas: true, busca: m.busca, acao: 'escolher' });
+  } else if (m.campo === 'categoria') {
     const tipo = f.tipo === 'receita' ? 'Receita' : 'Despesa';
     const grupos = R.porOrdem(db, db.categorias.filter((c) => c.tipo === tipo && !c.grupo && R.ativo(c)));
-    corpo = grupos.map((g) => {
-      const subs = R.porOrdem(db, db.categorias.filter((c) => c.grupo === g.id && R.ativo(c)));
-      const btn = (c, nome) => `<button class="chip" style="margin:4px 4px 0 0" aria-pressed="${f.categoria === c.id}" data-a="escolher" data-id="${c.id}">${esc(nome)}</button>`;
-      return `<div style="margin:14px 4px 0"><div class="muted" style="font-size:12.5px;font-weight:700">${esc(g.nome)}</div><div>${subs.length ? subs.map((s) => btn(s, s.nome)).join('') : btn(g, g.nome)}</div></div>`;
-    }).join('');
+    corpo = listaCategorias(E, { tipos: [tipo], sel: [f.categoria], busca: m.busca, acao: 'escolher' });
     const nc = E.novaCat || {};
     corpo += `<div class="cartao" style="margin-top:18px;background:var(--bg)"><div style="font-size:13.5px;font-weight:800">Criar categoria</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
@@ -1013,8 +1060,9 @@ function modalSeletor(E, A, m) {
         ${itens.map((x) => `<button class="opcao" role="radio" aria-checked="${f[m.campo] === x.id}" data-a="escolher" data-id="${x.id}">${marcado(f[m.campo] === x.id)}<span style="flex:1"><span style="display:block;font-weight:700">${esc(x.nome)}</span><span class="muted" style="font-size:12.5px">${ehCartao ? 'Fecha dia ' + x.fecha + ' · vence dia ' + x.vence + (R.pagaPorDe(db, x) !== x.dono ? ' · paga: ' + esc(A.nome(R.pagaPorDe(db, x))) : '') : esc(x.tipo || '') + ' · ' + brl(R.saldoConta(db, x))}</span></span></button>`).join('')}`;
     }).join('') || `<div class="vazio">Nada cadastrado. <button class="link" data-a="${ehCartao ? 'novoCartao' : 'novaConta'}">Cadastrar</button></div>`;
   }
-  const titulo = { categoria: 'Categoria', cartao: 'Cartão', conta: f.tipo === 'receita' ? 'Caiu na conta' : 'Saiu da conta', contaDestino: 'Entra na conta' }[m.campo];
-  return modalLancar(E, A, E.modalPai) + folha(titulo, corpo, 'fecharSeletor');
+  const titulo = { categoria: paiTipo === 'meta' ? 'Categorias da meta' : 'Categoria', cartao: 'Cartão', conta: f.tipo === 'receita' ? 'Caiu na conta' : 'Saiu da conta', contaDestino: 'Entra na conta' }[m.campo];
+  const fundo = paiTipo === 'meta' ? T2.modalMeta(E, A, E.modalPai) : paiTipo === 'filtros' ? modalFiltros(E, A) : modalLancar(E, A, E.modalPai);
+  return fundo + folha(titulo, corpo, 'fecharSeletor');
 }
 
 function modalDetalhe(E, A, m) {

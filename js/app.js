@@ -55,20 +55,20 @@ function desenhar() {
   }
 }
 
-// Início no computador: cada bloco ocupa só a altura que precisa (encaixe em
+// Grades do computador: cada bloco ocupa só a altura que precisa (encaixe em
 // mosaico). A grade usa linhas de 4 px e cada bloco pede quantas linhas cabe nele.
 const LINHA_GRADE = 4, VAO_GRADE = 16;
 let observadorGrade = null;
 function encaixarGrade() {
   if (observadorGrade) observadorGrade.disconnect();
-  const grade = document.querySelector('.grade-inicio');
-  if (!grade || !window.ResizeObserver) return;
+  const grades = document.querySelectorAll('.grade');
+  if (!grades.length || !window.ResizeObserver) return;
   const ajustar = (bloco) => {
     if (!window.matchMedia('(min-width: 1100px)').matches) { bloco.style.gridRowEnd = ''; return; }
     bloco.style.gridRowEnd = 'span ' + Math.ceil((bloco.getBoundingClientRect().height + VAO_GRADE) / LINHA_GRADE);
   };
   observadorGrade = new ResizeObserver((itens) => itens.forEach((i) => ajustar(i.target)));
-  [...grade.children].forEach((b) => { ajustar(b); observadorGrade.observe(b); });
+  grades.forEach((g) => [...g.children].forEach((b) => { ajustar(b); observadorGrade.observe(b); }));
 }
 
 let timerToast = null;
@@ -728,11 +728,11 @@ const A = {
   metaVale(d) { E.modal.form.vale = d.v; desenhar(); },
   metaUsarMedia(d) { E.modal.form.valor = valorTxt(Number(d.v)); desenhar(); },
   metaCat(d) {
-    const f = E.modal.form;
+    const f = (E.modal.tipo === 'seletor' ? E.modalPai : E.modal).form;
     const multi = E.banco.demo || E.banco.temCampo('metas', 'categorias');
     const c = R.porId(E.db.categorias, d.id);
     if (!c) return;
-    if (!multi) f.cats = f.cats[0] === d.id ? [] : [d.id];
+    if (!multi) { f.cats = f.cats[0] === d.id ? [] : [d.id]; if (E.modal.tipo === 'seletor') { E.modal = E.modalPai; E.modalPai = null; } }
     else if (f.cats.includes(d.id)) f.cats = f.cats.filter((x) => x !== d.id);
     else if (R.ehGrupo(E.db, d.id)) f.cats = [...f.cats.filter((x) => (R.porId(E.db.categorias, x) || {}).grupo !== d.id), d.id]; // o grupo inteiro inclui as subcategorias
     else f.cats = [...f.cats, d.id];
@@ -918,6 +918,7 @@ const A = {
   fecharSeletor() { E.modal = E.modalPai; E.modalPai = null; desenhar(); },
   escolher(d) {
     const campo = E.modal.campo;
+    if (E.modalPai.tipo === 'filtros') { E.filtros.grupo = d.id; E.modal = E.modalPai; E.modalPai = null; desenhar(); return; }
     const pf = E.modalPai.form;
     pf[campo] = d.id;
     if (campo === 'cartao' && pf.tipo === 'transferencia' && pf.transf === 'fatura' && !E.modalPai.editando) {
@@ -1418,6 +1419,7 @@ document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (!el.dataset) return;
   if (el.dataset.filtro === 'busca') { E.filtros.busca = el.value; return; }
+  if (el.dataset.buscaCat !== undefined && E.modal && E.modal.tipo === 'seletor') { E.modal.busca = el.value; desenhar(); return; }
   if (el.dataset.novaCat) { E.novaCat = E.novaCat || {}; E.novaCat[el.dataset.novaCat] = el.value; return; }
   if (el.dataset.saldoBanco) { el.value = mascarar(el.value, true); E.saldoBanco[el.dataset.saldoBanco] = el.value; return; }
   if (el.dataset.totalBanco) { el.value = mascarar(el.value, false); return; }

@@ -187,7 +187,6 @@ export function telaConfig(E) {
   const C = E.banco && !E.banco.demo ? T2.calcInvest(E) : null;
   const pessoas = db.pessoas.filter((x) => x.tipo === 'Pessoa');
   const corpo = `<div class="grade">
-    <div>
       <div class="cartao"><h2 style="font-size:16px;font-weight:800">Aparência</h2>
         <div style="margin-top:10px"><span class="muted" style="font-size:13px">Tema</span>${chips('tema', [['escuro', 'Escuro'], ['claro', 'Claro'], ['auto', 'Igual ao celular']])}</div>
       </div>
@@ -204,8 +203,6 @@ export function telaConfig(E) {
         ${linha('Acerto pendente', 'Acerto do mês anterior ainda não registrado.', chave(cfg.avisos.acerto, 'cfgAviso', 'acerto', 'Acerto pendente'))}
         ${linha('Notificação no celular', notif === 'indisponivel' ? 'Este navegador não mostra notificações. No iPhone, instale o app na tela inicial (iOS 16.4 ou mais novo).' : notif === 'denied' ? 'Bloqueadas no navegador ou no celular. Libere por lá para ligar.' : 'Avisa uma vez por dia, quando você abre o app.', chave(cfg.notificar && notif === 'granted', 'cfgNotificar', '', 'Notificação no celular', notif === 'indisponivel' || notif === 'denied'))}
       </div>
-    </div>
-    <div>
       <div class="cartao"><h2 style="font-size:16px;font-weight:800">Planilha</h2>
         ${linha(esc(E.banco ? E.banco.titulo || 'Planilha' : ''), E.banco && E.banco.demo ? 'Modo demonstração (dados de exemplo neste aparelho)' : E.banco && E.banco.offline ? 'Sem internet: usando a cópia deste aparelho' : 'Conectada', E.banco && !E.banco.demo ? `<a class="btn btn-peq btn-sec" href="https://docs.google.com/spreadsheets/d/${esc(E.banco.id)}" target="_blank" rel="noopener">Abrir</a>` : '')}
         ${E.banco && !E.banco.demo ? linha('Lançamentos sem internet', pend ? `${pend} esperando para ir para a planilha` : 'Nada esperando: tudo já está na planilha.', pend ? '<button class="btn btn-peq btn-sec" data-a="enviarFila">Enviar</button>' : '') : ''}
@@ -222,7 +219,6 @@ export function telaConfig(E) {
         ${linha('Sair', esc(E.email || ''), '<button class="btn btn-peq btn-perigo" data-a="sair">Sair</button>')}
         <p class="muted" style="font-size:12px;margin-top:10px">Economiau ${esc(E.versao)} · as preferências desta tela ficam salvas neste aparelho.</p>
       </div>
-    </div>
   </div>`;
   return casca(E, 'Configurações', corpo, { voltar: 'mais' });
 }
