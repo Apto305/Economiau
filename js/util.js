@@ -2,7 +2,7 @@
 // Datas circulam no app como texto 'AAAA-MM-DD' e meses como 'AAAA-MM'.
 
 export const brl = (n) =>
-  'R$ ' + (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  'R$\u00a0' + (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const brlSinal = (n) => (n < 0 ? '− ' : '') + brl(Math.abs(n));
 

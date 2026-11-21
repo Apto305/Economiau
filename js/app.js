@@ -325,7 +325,7 @@ function novoForm(tipo = 'despesa') {
   return {
     tipo, valor: '', data: hojeISO(), dataModo: 'hoje', desc: '', categoria: '', obs: '',
     conta: primeiraConta(quem), cartao: primeiroCartao(quem), contaDestino: '', parcelas: 1, meio: 'Pix',
-    dono: quem, renda: !ehFamilia(quem), transf: 'fatura', tags: [], tagNova: '', deduz: false, repetir: false, repetirMeses: 0, foraAcerto: false,
+    dono: quem, renda: !ehFamilia(quem), transf: 'conta', tags: [], tagNova: '', deduz: false, repetir: false, repetirMeses: 0, foraAcerto: false,
   };
 }
 const valorTxt = (n) => (n === '' || n === null || n === undefined ? '' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -535,7 +535,7 @@ const A = {
     const tipo = f.tipo === 'receita' ? 'Receita' : 'Despesa';
     let nova;
     const ok = await salvar(async () => { [nova] = await E.banco.inserir('categorias', [{ nome, tipo, grupo: nc.grupo || '', status: 'Ativo' }]); });
-    if (ok) { f.categoria = nova.id; E.novaCat = {}; E.modal = E.modalPai; E.modalPai = null; avisar('Categoria criada.'); }
+    if (ok) { f.categoria = nova.id; E.novaCat = {}; E.novaCatAberta = false; E.modal = E.modalPai; E.modalPai = null; avisar('Categoria criada.'); }
   },
   lancTipo(d) {
     const f = E.modal.form; f.tipo = d.v; f.estorno = false;
@@ -916,6 +916,10 @@ const A = {
   parcelas(d) { const f = E.modal.form; f.parcelas = Math.max(1, Math.min(48, f.parcelas + Number(d.v))); desenhar(); },
   abrirSeletor(d) { E.modalPai = E.modal; E.modal = { tipo: 'seletor', campo: d.v }; desenhar(); },
   fecharSeletor() { E.modal = E.modalPai; E.modalPai = null; desenhar(); },
+  abrirInfo(d) { E.modalPai = E.modal; E.modal = { tipo: 'info', chave: d.v }; desenhar(); },
+  fecharInfo() { E.modal = E.modalPai; E.modalPai = null; desenhar(); },
+  novaCatAbrir() { E.novaCatAberta = true; desenhar(); const el = document.querySelector('[data-nova-cat="nome"]'); if (el) el.focus(); },
+  irCategorias() { E.modal = null; E.modalPai = null; E.novaCatAberta = false; location.hash = '#/categorias'; desenhar(); },
   escolher(d) {
     const campo = E.modal.campo;
     if (E.modalPai.tipo === 'filtros') { E.filtros.grupo = d.id; E.modal = E.modalPai; E.modalPai = null; desenhar(); return; }

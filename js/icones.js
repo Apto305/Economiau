@@ -39,6 +39,7 @@ const P = {
   transferir: 'M4 12h16M14 6l6 6-6 6',
   hash: 'M5 9h14M5 15h14M10 4L8 20M16 4l-2 16',
   filtro: 'M4 6h16M7 12h10M10 18h4',
+  info: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-5M12 8h.01',
 };
 export const ic = (nome, tam = 20, extra = '') =>
   `<svg width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}><path d="${P[nome] || ''}"/></svg>`;

@@ -113,6 +113,9 @@ button.item:hover, a.item:hover { background: var(--hover); }
 .barra > span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
 
 /* botões */
+.rot-info { display: inline-flex; align-items: center; gap: 4px; }
+.info-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 11px; background: none; color: var(--muted); }
+.info-btn::after { content: ''; position: absolute; inset: -11px; }
 .com-badge { position: relative; }
 .com-badge .badge { position: absolute; top: 4px; right: 2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; }
 .criar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
