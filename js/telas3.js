@@ -110,7 +110,7 @@ export function blocoExtra(E, A, id, res) {
   if (id === 'limite') {
     const hoje = hojeISO();
     const cartoes = db.cartoes.filter((c) => R.ativo(c) && Number(c.limite) > 0 && (ehFam ? c.dono === fam.id : c.dono === p || R.pagaPorDe(db, c) === p));
-    const usado = (c) => arred(R.faturasDoCartao(db, c.id).filter((f) => R.situacaoFatura(db, f, hoje) !== 'Paga').reduce((s, f) => s + R.totalFatura(db, f.id), 0));
+    const usado = (c) => arred(R.faturasDoCartao(db, c.id).filter((f) => !R.faturaEsquecida(f, hoje) && R.situacaoFatura(db, f, hoje) !== 'Paga').reduce((s, f) => s + R.totalFatura(db, f.id), 0));
     return titulo('Limite dos cartões' + deHoje, 'faturas', 'Ver faturas') + `<div class="lista">${cartoes.length ? cartoes.map((c) => { const u = usado(c); const pct = u / Number(c.limite); return `<a class="item" href="#/faturas" style="flex-direction:column;align-items:stretch;gap:0"><span style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="display:flex;gap:8px;align-items:center;min-width:0"><span class="chip-cor" style="background:${corConta(c.cor)};width:24px;height:24px;font-size:12px">${esc(c.nome[0])}</span><span class="titulo">${esc(c.nome)}</span></span><span style="white-space:nowrap;font-size:13px"><strong>${sens(brl(u))}</strong> <span class="muted">de ${sens(brl(c.limite))}</span></span></span>${barra(pct, corPct(pct))}<span class="muted" style="font-size:12px;margin-top:4px">disponível ${sens(brl(Math.max(0, Number(c.limite) - u)))} · inclui parcelas futuras</span></a>`; }).join('') : '<div class="vazio">Nenhum cartão com limite cadastrado neste perfil.</div>'}</div>`;
   }
   if (id === 'investimentos') {
@@ -209,7 +209,7 @@ export function telaConfig(E) {
         ${linha('Atualizar dados', 'Lê a planilha de novo (útil depois de mexer nela direto).', '<button class="btn btn-peq btn-sec" data-a="recarregar">Atualizar</button>')}
         ${E.banco && !E.banco.demo ? linha('Estrutura da planilha', E.banco.temCampo('metas', 'categorias') ? 'Atualizada (1.17)' : 'Desatualizada. Atualize a planilha (script de montagem) para usar isto.', '') : ''}
       </div>
-      ${C ? `<div class="secao-titulo" style="margin-top:4px"><h2>Robô dos índices</h2></div>${T2.statusRobo(E, C).replace('margin-top:12px;', 'margin-top:0;')}` : ''}
+      ${C ? `<div><div class="secao-titulo" style="margin-top:4px"><h2>Robô dos índices</h2></div>${T2.statusRobo(E, C).replace('margin-top:12px;', 'margin-top:0;')}</div>` : ''}
       <div class="cartao"><h2 style="font-size:16px;font-weight:800">Pessoas com acesso</h2>
         ${pessoas.map((x) => `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)">${A.avatar(x.id, 32)}<span style="flex:1;min-width:0"><span style="display:block;font-weight:700">${esc(x.nome)}</span><span class="muted" style="font-size:12.5px;overflow-wrap:anywhere">${esc(x.email || 'sem e-mail')}</span></span></div>`).join('')}
         <p class="muted" style="font-size:12.5px;margin-top:8px">Quem entra é decidido pela aba Pessoas e pelo compartilhamento da planilha no Google Drive.</p>

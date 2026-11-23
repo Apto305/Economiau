@@ -1,7 +1,7 @@
 // Regras de negócio do Economiau: faturas, mês de competência, divisão
 // pela renda, saldos das contas e acerto do mês. Não mexe na tela nem na
 // planilha: recebe os dados já lidos (db) e devolve números.
-import { arred, mesDe, somaMes, dataNoMes, hojeISO } from './util.js';
+import { arred, mesDe, somaMes, somaDias, dataNoMes, hojeISO } from './util.js';
 
 export const TIPO = {
   despesa: 'Despesa', estorno: 'Estorno/Crédito', fatura: 'Pagamento de fatura',
@@ -111,6 +111,22 @@ export function faturasComDiaAntigo(db, antigo, novo) {
   return out;
 }
 
+// Nova data de uma compra parcelada: vale para todas as parcelas, e cada uma
+// vai para a fatura certa (a 1ª pela data, as outras nos meses seguintes).
+// Uma parcela conferida, ou numa fatura paga, não pode sair da fatura dela.
+export function novaDataParcelas(db, t, data) {
+  const c = porId(db.cartoes, t.cartao);
+  const hoje = hojeISO();
+  const itens = db.transacoes.filter((x) => x.grupoParc === t.grupoParc).sort((a, b) => a.parcela - b.parcela).map((x) => {
+    const f = faturaPara(db, c, data, (x.parcela || 1) - 1);
+    const atual = porId(db.faturas, x.fatura);
+    const muda = !atual || f.id !== atual.id;
+    const presa = muda && (!!x.conferido || (!!atual && situacaoFatura(db, atual, hoje) === 'Paga'));
+    return { x, f, atual, muda, presa };
+  });
+  return { cartao: c, itens, presas: itens.filter((i) => i.presa) };
+}
+
 // Situação da fatura pela data de hoje e pelos pagamentos
 export function situacaoFatura(db, f, hoje) {
   const total = totalFatura(db, f.id);
@@ -129,12 +145,15 @@ export function totalFatura(db, faturaId) {
   }, 0));
 }
 
-// Fatura "atual" do cartão: a aberta mais antiga ou, se todas fecharam, a
-// mais recente ainda não paga.
+// Fatura vencida há mais de 40 dias e não marcada como paga: foi paga fora do
+// app (de antes de usar o app). Não conta como pendente nem no limite.
+export const faturaEsquecida = (f, hoje) => !!f.vencimento && f.vencimento < somaDias(hoje, -40);
+
+// Fatura "atual" do cartão: a fechada ainda não paga (com valor, recente) ou,
+// se não houver, a que está aberta.
 export function faturaAtual(db, cartao, hoje) {
   const lista = faturasDoCartao(db, cartao.id);
-  const naoPagas = lista.filter((f) => situacaoFatura(db, f, hoje) !== 'Paga');
-  const fechada = naoPagas.find((f) => hoje >= f.fechamento);
+  const fechada = lista.find((f) => hoje >= f.fechamento && !faturaEsquecida(f, hoje) && totalFatura(db, f.id) > 0.005 && situacaoFatura(db, f, hoje) !== 'Paga');
   if (fechada) return fechada;
   return lista.find((f) => hoje < f.fechamento) || null;
 }

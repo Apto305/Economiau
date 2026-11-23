@@ -690,7 +690,7 @@ export function telaRelatorios(E) {
       </div>`; }).join('')}
       <div style="display:flex;gap:16px;margin-top:14px;font-size:12px;color:var(--soft)"><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--soft);margin-right:6px"></span>Quanto pagou dos gastos da família</span><span><span style="display:inline-block;width:12px;height:8px;border-radius:2px;background:var(--soft);opacity:.4;outline:1px solid var(--soft);outline-offset:-1px;margin-right:6px"></span>Parte que cabe a cada um</span></div>
     </div>
-    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto de ${esc(nomeM)}</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} zerado</strong></span>`}${ic('seta', 18)}</a></div>`;
+    <a class="acerto-hero ${r ? '' : 'zerado'}" href="#/acerto" style="margin-top:12px">${r ? `${A.avatar(r.de, 36)}<span style="flex:1"><span style="display:block;font-size:12.5px;color:var(--f-txt)">Acerto de ${esc(nomeM)}</span><strong>${esc(A.nome(r.de))} transfere ${sens(brl(r.valor))} para ${esc(A.nome(r.para))}</strong></span>` : `${ic('ok', 22)}<span style="flex:1"><strong>Acerto de ${esc(nomeM)} ${ac.det.acertos.length ? 'feito' : 'zerado'}</strong></span>`}${ic('seta', 18)}</a></div>`;
     if (!p1 || !p2) corpo = '<div class="vazio">Precisa de duas pessoas na aba Pessoas.</div>';
   }
   return casca(E, 'Relatórios', abas + corpo, { voltar: 'planejamento', acoes: seletorMes(E) });
