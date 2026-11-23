@@ -81,11 +81,18 @@ const ABAS = {
       conferida: ['Conferida', 'b'], criadoEm: ['Criado em', 'dh'],
     },
   },
+  // aba opcional (planilha 1.18): preferências de cada pessoa que valem em todos os aparelhos
+  prefs: {
+    aba: 'Preferências', prefixo: 'PRF', opcional: true, campos: {
+      id: ['ID'], pessoa: ['Pessoa (ID)'], chave: ['Chave'], valor: ['Valor'], atualizadoEm: ['Atualizado em', 'dh'],
+    },
+  },
   cartoes: {
     aba: 'Cartões', prefixo: 'CRT', campos: {
       id: ['ID'], nome: ['Nome'], dono: ['Proprietário (ID)'], fecha: ['Dia de fechamento', 'n'], vence: ['Dia de vencimento', 'n'],
       rendaRef: ['Pago com a renda do'], contaPag: ['Conta de pagamento (ID)'], status: ['Status'], criadoEm: ['Criado em', 'dh'],
       arquivadoEm: ['Arquivado em', 'dh'], limite: ['Limite', 'n'], cor: ['Cor'], pagaPor: ['Paga por (ID)'],
+      limiteCom: ['Divide o limite com (ID)'],
     },
   },
   contas: {

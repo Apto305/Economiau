@@ -7,7 +7,7 @@ import * as T from './telas.js';
 import * as T2 from './telas2.js';
 import * as T3 from './telas3.js';
 import * as I from './invest.js';
-import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero, dataNoMes, esc } from './util.js';
+import { hojeISO, mesDe, somaMes, somaDias, lerValor, arred, brl, nomeMesAno, formatarId, proximoNumero, dataNoMes, esc, agoraSerial } from './util.js';
 
 const LS = {
   get: (k, d = null) => { try { const v = localStorage.getItem('economiau-' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -34,6 +34,9 @@ function desenhar() {
   document.body.className = 'perfil-' + (E.db && E.perfil ? T.apoio(E).chave(E.perfil) : 'demetrio') + (temaClaro() ? ' tema-claro' : '');
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', temaClaro() ? '#F4F5F7' : '#15181E');
+  // Investimentos no computador: o detalhe fica na coluna da direita, não por cima
+  if (E.modal && E.modal.tipo === 'invest' && E.rota === 'investimentos' && T2.telaLarga()) { E.invSel = E.modal.id; E.modal = null; }
+  if (E.modalPai && E.modalPai.tipo === 'invest' && E.rota === 'investimentos' && T2.telaLarga()) E.modalPai = null;
   let html = '';
   if (E.fase === 'iniciando' || E.fase === 'carregando') html = T.telaCarregando(E);
   else if (E.fase === 'entrar') html = T.telaEntrar(E);
@@ -113,6 +116,45 @@ function temaClaro() {
 if (escuroNoSistema && escuroNoSistema.addEventListener) escuroNoSistema.addEventListener('change', () => desenhar());
 const salvarConfig = (mudar) => { const c = T3.config(); mudar(c); LS.set('config', c); };
 
+// ------------------------------------------------------------ preferências na planilha (v2.0)
+// Valem em todos os aparelhos da pessoa: Início de cada perfil, avisos e
+// "esconder valores ao abrir". Tema, perfil ao abrir e notificações ficam no
+// aparelho. O aparelho guarda uma cópia (funciona sem internet).
+const prefsNaPlanilha = () => E.banco && (E.banco.demo || E.banco.temCampo('prefs', 'valor'));
+const minhasPrefs = () => (E.db.prefs || []).filter((x) => x.pessoa === E.eu && x.chave);
+function lerPrefs() {
+  if (!prefsNaPlanilha()) return;
+  minhasPrefs().forEach((x) => {
+    let v; try { v = JSON.parse(x.valor); } catch (e) { return; }
+    if (x.chave.startsWith('inicio-')) { if (v) LS.set(x.chave, v); else LS.del(x.chave); }
+    else if (x.chave === 'avisos' && v) salvarConfig((c) => { c.avisos = { ...c.avisos, ...(v.avisos || {}) }; if (v.diasFatura) c.diasFatura = v.diasFatura; });
+    else if (x.chave === 'ocultar') salvarConfig((c) => { c.ocultarAoAbrir = !!v; });
+  });
+}
+function prefsDoAparelho() {
+  const c = T3.config();
+  const o = { avisos: { avisos: c.avisos, diasFatura: c.diasFatura }, ocultar: !!c.ocultarAoAbrir };
+  E.db.pessoas.forEach((p) => { const v = LS.get('inicio-' + p.id, null); if (v) o['inicio-' + p.id] = v; });
+  return o;
+}
+async function guardarPref(chave, valor) {
+  if (!prefsNaPlanilha() || !E.eu) return;
+  const txt = JSON.stringify(valor === undefined ? null : valor);
+  const atual = minhasPrefs().find((x) => x.chave === chave);
+  if (atual && atual.valor === txt) return;
+  try {
+    if (atual) await E.banco.atualizar('prefs', [{ id: atual.id, valor: txt, atualizadoEm: agoraSerial() }]);
+    else await E.banco.inserir('prefs', [{ pessoa: E.eu, chave, valor: txt, atualizadoEm: agoraSerial() }]);
+    E.db = E.banco.db;
+  } catch (e) { avisar('Preferência salva só neste aparelho: ' + e.message, true); }
+}
+// Primeira vez com a planilha 1.18: o que já estava neste aparelho vai para a planilha
+async function subirPrefsDoAparelho() {
+  if (!prefsNaPlanilha() || !E.eu || minhasPrefs().length) return;
+  const o = prefsDoAparelho();
+  for (const k of Object.keys(o)) await guardarPref(k, o[k]);
+}
+
 // Avisos como notificação do sistema, ao abrir o app (uma vez por dia cada)
 async function notificarAvisos() {
   try {
@@ -167,6 +209,7 @@ async function abrirDemo() {
   E.banco = new BancoDemo();
   E.email = 'demo-demetrio@exemplo.com';
   E.db = await E.banco.carregar();
+  E.eu = 'PES-0001';
   if (!E.perfil || !R.porId(E.db.pessoas, E.perfil)) E.perfil = null;
   E.fase = 'pronto';
   desenhar();
@@ -202,11 +245,14 @@ async function carregarPlanilha(id) {
   const pessoa = E.db.pessoas.find((p) => String(p.email || '').toLowerCase() === E.email);
   if (!pessoa) { E.fase = 'negado'; desenhar(); return; }
   if (!E.perfil || !R.porId(E.db.pessoas, E.perfil)) E.perfil = null;
+  E.eu = pessoa.id;
+  lerPrefs();
   E.fase = 'pronto'; E.erro = ''; E.sessaoExpirada = false;
   if (!E.db.contas.some(R.ativo) && !LS.get('primeiro-ok-' + id)) { if (E.perfil) ir('primeiro'); }
   desenhar();
   if (E.banco.offline) return;
   notificarAvisos();
+  await subirPrefsDoAparelho();
   await corrigirFaturas();
   try {
     const n = await corrigirResgates();
@@ -386,13 +432,13 @@ const A = {
     if (i < 0 || j < 0 || j >= r.ordem.length) return;
     [r.ordem[i], r.ordem[j]] = [r.ordem[j], r.ordem[i]]; desenhar();
   },
-  salvarInicio() { LS.set('inicio-' + E.perfil, E.inicioRasc); E.inicioRasc = null; E.modal = null; avisar('Início salvo.'); },
-  inicioPadrao() { LS.del('inicio-' + E.perfil); E.inicioRasc = JSON.parse(JSON.stringify(T3.prefsInicio(E.perfil))); desenhar(); },
+  salvarInicio() { const v = E.inicioRasc; LS.set('inicio-' + E.perfil, v); guardarPref('inicio-' + E.perfil, v); E.inicioRasc = null; E.modal = null; avisar('Início salvo.'); },
+  inicioPadrao() { LS.del('inicio-' + E.perfil); guardarPref('inicio-' + E.perfil, null); E.inicioRasc = JSON.parse(JSON.stringify(T3.prefsInicio(E.perfil))); desenhar(); },
   fecharInicio() { E.inicioRasc = null; E.modal = null; desenhar(); },
   // ------------------------------------------------------------ configurações
-  cfg(d) { salvarConfig((c) => { c[d.c] = d.c === 'diasFatura' ? Number(d.v) : d.v; }); desenhar(); },
-  cfgOcultar() { salvarConfig((c) => { c.ocultarAoAbrir = !c.ocultarAoAbrir; }); desenhar(); },
-  cfgAviso(d) { salvarConfig((c) => { c.avisos[d.v] = !c.avisos[d.v]; }); desenhar(); },
+  cfg(d) { salvarConfig((c) => { c[d.c] = d.c === 'diasFatura' ? Number(d.v) : d.v; }); if (d.c === 'diasFatura') guardarPref('avisos', prefsDoAparelho().avisos); desenhar(); },
+  cfgOcultar() { salvarConfig((c) => { c.ocultarAoAbrir = !c.ocultarAoAbrir; }); guardarPref('ocultar', T3.config().ocultarAoAbrir); desenhar(); },
+  cfgAviso(d) { salvarConfig((c) => { c.avisos[d.v] = !c.avisos[d.v]; }); guardarPref('avisos', prefsDoAparelho().avisos); desenhar(); },
   async cfgNotificar() {
     const ligar = !(T3.config().notificar && Notification.permission === 'granted');
     if (ligar && Notification.permission !== 'granted') {
@@ -670,7 +716,7 @@ const A = {
   },
 
   // ---- investimentos
-  abrirInvest(d) { E.modal = { tipo: 'invest', id: d.id }; desenhar(); },
+  abrirInvest(d) { if (E.rota === 'investimentos' && T2.telaLarga()) { E.invSel = d.id; E.modal = null; } else E.modal = { tipo: 'invest', id: d.id }; desenhar(); },
   novoInvest() {
     const p = donoPadrao();
     E.modal = { tipo: 'investForm', form: { foraAcerto: false, nome: '', emissor: '', tipo: 'CDB', titular: E.perfil || p, indexador: 'CDI', taxa: '100', dataAplic: hojeISO(), vencimento: '', liquidez: 'Diária', isento: 'Não', valor: '', conta: primeiraConta(E.perfil && !ehFamilia(E.perfil) ? E.perfil : p) } };
@@ -706,8 +752,10 @@ const A = {
     if (ok) { E.modal = null; avisar(novo === 'Arquivado' ? 'Investimento arquivado.' : 'Investimento reativado.'); }
   },
   novoMov(d) {
-    const i = R.porId(E.db.investimentos, E.modal.id);
-    E.modalPai = E.modal;
+    const abertoPorCima = E.modal && E.modal.tipo === 'invest';
+    const i = R.porId(E.db.investimentos, d.id || (abertoPorCima ? E.modal.id : E.invSel));
+    if (!i) return;
+    E.modalPai = abertoPorCima ? E.modal : null; // no computador o detalhe já está na coluna
     E.modal = { tipo: 'mov', form: { foraAcerto: false, investimento: i.id, tipo: d.v, valor: '', data: hojeISO(), conta: primeiraConta(ehFamilia(i.titular) ? eu() : i.titular) } };
     desenhar();
   },
@@ -939,16 +987,17 @@ const A = {
     const valor = arred(lerValor(f.valor));
     if (!(valor > 0)) return avisar('Digite o valor.', true);
     if (f.tipo !== 'transferencia' && !f.desc.trim()) return avisar('Escreva uma descrição.', true);
-    if (E.modal.editando && f.grupo && f.parcelas > 1 && f.dataOrig && f.data !== f.dataOrig) {
-      const pl = R.novaDataParcelas(E.db, R.porId(E.db.transacoes, E.modal.editando), f.data);
-      if (pl.presas.length) return avisar('Não dá para mudar a data: há parcela conferida ou em fatura paga que sairia da fatura dela.', true);
+    const mudaParc = E.modal.editando && f.grupo && f.parcelas > 1 && ((f.dataOrig && f.data !== f.dataOrig) || (f.cartaoOrig && f.cartao !== f.cartaoOrig));
+    if (mudaParc) {
+      const pl = R.novaDataParcelas(E.db, R.porId(E.db.transacoes, E.modal.editando), f.data, f.cartao);
+      if (pl.presas.length) return avisar('Não dá para salvar: há parcela conferida ou em fatura paga que sairia da fatura dela.', true);
     }
     if (E.modal.editando && f.grupo && f.parcelas > 1 && !E.modal.escopo) {
       const t = R.porId(E.db.transacoes, E.modal.editando);
       const prox = E.db.transacoes.filter((x) => x.grupoParc === t.grupoParc && x.id !== t.id && !x.conferido && x.parcela > t.parcela).length;
       E.modalPai = E.modal;
       E.modal = { tipo: 'confirmar', titulo: 'Aplicar a mudança em quais parcelas?',
-        texto: (f.dataOrig && f.data !== f.dataOrig ? 'A nova data vale para todas as parcelas. ' : '') + `Esta é a parcela ${t.parcela} de ${t.totalParcelas}.` + (prox ? ` Há mais ${prox} parcela${prox === 1 ? '' : 's'} depois dela ainda não conferida${prox === 1 ? '' : 's'}.` : ' As próximas já foram conferidas ou não existem.'),
+        texto: (mudaParc ? (f.cartaoOrig && f.cartao !== f.cartaoOrig ? 'O cartão' + (f.data !== f.dataOrig ? ' e a data valem' : ' vale') : 'A nova data vale') + ' para todas as parcelas. ' : '') + `Esta é a parcela ${t.parcela} de ${t.totalParcelas}.` + (prox ? ` Há mais ${prox} parcela${prox === 1 ? '' : 's'} depois dela ainda não conferida${prox === 1 ? '' : 's'}.` : ' As próximas já foram conferidas ou não existem.'),
         opcoes: [['salvarParcelaUma', 'Só esta parcela']].concat(prox ? [['salvarParcelaProximas', prox === 1 ? 'Esta e a próxima' : 'Esta e as próximas ' + prox]] : []) };
       desenhar();
       return;
@@ -984,7 +1033,7 @@ const A = {
     E.modal = {
       tipo: 'lancar', editando: t.id,
       form: {
-        tipo, valor: valorTxt(t.valor), data: t.data, dataOrig: t.data, dataModo: modoData(t.data), desc: t.desc || '', categoria: t.categoria || '', obs: t.obs || '',
+        tipo, valor: valorTxt(t.valor), data: t.data, dataOrig: t.data, cartaoOrig: t.cartao || '', dataModo: modoData(t.data), desc: t.desc || '', categoria: t.categoria || '', obs: t.obs || '',
         conta: t.conta || '', cartao: t.cartao || '', contaDestino: t.contaDestino || '', parcelas: t.totalParcelas || 1, meio: t.meio || 'Pix',
         dono: t.dono || '', renda: false, transf: t.tipo === R.TIPO.transf ? 'conta' : 'fatura', grupo: t.grupoParc || '',
         tags: R.tagsDe(t), tagNova: '', deduz: !!t.deduz, recorrencia: t.recorrencia || '', estorno: t.tipo === R.TIPO.estorno, foraAcerto: !!t.foraAcerto, divisao: t.divisao || '',
@@ -1002,8 +1051,12 @@ const A = {
   editarFixa(d) {
     const r = R.porId(E.db.recorrencias, d.id);
     if (!r) return;
-    E.modal = { tipo: 'fixa', form: { ...r, valor: valorTxt(r.valor) } }; desenhar();
+    // falta lançar no mês escolhido: o painel já oferece confirmar ou pular
+    const p = R.previstosDoMes(E.db, E.mes).find((x) => x.recorrencia === r.id);
+    E.modal = { tipo: 'fixa', form: { ...r, valor: valorTxt(r.valor) }, prevId: p ? p.id : '' }; desenhar();
   },
+  fixaConfirmar() { E.modal.id = E.modal.prevId; A.confirmarPrevisto(); },
+  fixaPular() { E.modal.id = E.modal.prevId; A.pularMes(); },
   fixaDia(d) { const f = E.modal.form; f.dia = ((Number(f.dia) - 1 + Number(d.v) + 31) % 31) + 1; desenhar(); },
   async salvarFixa() {
     const f = E.modal.form;
@@ -1075,6 +1128,7 @@ const A = {
   formDono(d) { E.modal.form.dono = d.id; desenhar(); },
   formPessoa(d) { E.modal.form.pessoa = d.id; const c = primeiraConta(d.id); if (c) E.modal.form.conta = c; desenhar(); },
   formCor(d) { E.modal.form.cor = d.v; desenhar(); },
+  formLimiteModo(d) { const f = E.modal.form; f.limiteModoDiv = d.v === 'dividido'; if (!f.limiteModoDiv) f.limiteCom = ''; desenhar(); },
   formDia(d) { const [k, n] = d.v.split(':'); const f = E.modal.form; f[k] = ((Number(f[k]) - 1 + Number(n) + 31) % 31) + 1; desenhar(); },
   formRendaRef(d) { E.modal.form.rendaRef = d.v; desenhar(); },
   async salvarConta() {
@@ -1099,7 +1153,12 @@ const A = {
     if (!f.pagaPor || ehFamilia(f.pagaPor)) return avisar('Escolha quem paga a fatura (Demétrio ou Giovanna).', true);
     const temPagaPor = E.banco.temCampo('cartoes', 'pagaPor');
     if (!temPagaPor) return avisar('Atualize a planilha (script de montagem) para usar isto.', true);
-    const o = { nome: f.nome.trim(), dono: f.dono, pagaPor: f.pagaPor, fecha: f.fecha, vence: f.vence, rendaRef: f.rendaRef, limite: f.limite === '' ? '' : arred(lerValor(f.limite)), cor: f.cor, status: f.status || 'Ativo' };
+    const o = { nome: f.nome.trim(), dono: f.dono, pagaPor: f.pagaPor, fecha: f.fecha, vence: f.vence, rendaRef: f.rendaRef, limite: f.limite === '' || f.limite === undefined ? '' : arred(lerValor(f.limite)), cor: f.cor, status: f.status || 'Ativo' };
+    if (E.banco.temCampo('cartoes', 'limiteCom')) {
+      if ((f.limiteModoDiv || f.limiteCom) && !f.limiteCom) return avisar('Escolha com qual cartão este divide o limite.', true);
+      if (f.limiteCom && f.id && E.db.cartoes.some((c) => c.limiteCom === f.id && R.ativo(c))) return avisar('Outros cartões usam o limite deste. Troque neles primeiro.', true);
+      o.limiteCom = f.limiteCom || '';
+    }
     const antigo = f.id ? { ...R.porId(E.db.cartoes, f.id) } : null;
     let datas = [], movidas = 0;
     const ok = await salvar(async () => {
@@ -1356,11 +1415,12 @@ async function atualizarLancamento(f, valor) {
       ? db.transacoes.filter((x) => x.grupoParc === t.grupoParc && (x.id === t.id || (!x.conferido && x.parcela > t.parcela)))
       : [t];
     await E.banco.atualizar('transacoes', alvo.map((x) => ({ id: x.id, ...comuns, valor, divisao: f.dono === famId ? (f.divisao || x.divisao || fam().divisaoPadrao) : '' })));
-    if (f.dataOrig && f.data !== f.dataOrig) {
-      const pl = R.novaDataParcelas(E.banco.db, t, f.data);
-      if (pl.presas.length) throw new Error('Não dá para mudar a data: há parcela conferida ou em fatura paga que sairia da fatura dela.');
+    if ((f.dataOrig && f.data !== f.dataOrig) || (f.cartaoOrig && f.cartao && f.cartao !== f.cartaoOrig)) {
+      const pl = R.novaDataParcelas(E.banco.db, t, f.data, f.cartao);
+      if (pl.presas.length) throw new Error('Não dá para salvar: há parcela conferida ou em fatura paga que sairia da fatura dela.');
       const criadas = [], mud = [];
-      for (const i of pl.itens) mud.push({ id: i.x.id, data: f.data, fatura: await garantirFatura(pl.cartao, f.data, (i.x.parcela || 1) - 1, criadas) });
+      const pagou = R.pagaPorDe(E.banco.db, pl.cartao);
+      for (const i of pl.itens) mud.push({ id: i.x.id, data: f.data, cartao: pl.cartao.id, pagou, fatura: await garantirFatura(pl.cartao, f.data, (i.x.parcela || 1) - 1, criadas) });
       await E.banco.atualizar('transacoes', mud);
     }
   } else {
@@ -1460,6 +1520,7 @@ document.addEventListener('change', (ev) => {
   if (el.dataset && el.dataset.filtro) { E.filtros[el.dataset.filtro] = el.value; if (el.dataset.filtro === 'de' || el.dataset.filtro === 'ate') E.filtros.periodo = 'outro'; desenhar(); return; }
   if (el.dataset && el.dataset.novaCat) { E.novaCat = E.novaCat || {}; E.novaCat[el.dataset.novaCat] = el.value; return; }
   if (el.dataset && el.dataset.saldoBanco) { setTimeout(desenhar, 0); return; }
+  if (el.dataset && el.dataset.campo === 'limiteCom') { const f = formAtual(); if (f) f.limiteCom = el.value; desenhar(); return; }
   if (el.dataset && el.dataset.totalBanco) {
     const id = el.dataset.totalBanco;
     const v = el.value === '' ? '' : arred(lerValor(el.value));

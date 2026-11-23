@@ -111,11 +111,12 @@ export function faturasComDiaAntigo(db, antigo, novo) {
   return out;
 }
 
-// Nova data de uma compra parcelada: vale para todas as parcelas, e cada uma
-// vai para a fatura certa (a 1ª pela data, as outras nos meses seguintes).
-// Uma parcela conferida, ou numa fatura paga, não pode sair da fatura dela.
-export function novaDataParcelas(db, t, data) {
-  const c = porId(db.cartoes, t.cartao);
+// Nova data e/ou novo cartão de uma compra parcelada: vale para todas as
+// parcelas, e cada uma vai para a fatura certa (a 1ª pela data, as outras nos
+// meses seguintes). Uma parcela conferida, ou numa fatura paga, não pode sair
+// da fatura dela.
+export function novaDataParcelas(db, t, data, cartaoId) {
+  const c = porId(db.cartoes, cartaoId || t.cartao);
   const hoje = hojeISO();
   const itens = db.transacoes.filter((x) => x.grupoParc === t.grupoParc).sort((a, b) => a.parcela - b.parcela).map((x) => {
     const f = faturaPara(db, c, data, (x.parcela || 1) - 1);
@@ -148,6 +149,17 @@ export function totalFatura(db, faturaId) {
 // Fatura vencida há mais de 40 dias e não marcada como paga: foi paga fora do
 // app (de antes de usar o app). Não conta como pendente nem no limite.
 export const faturaEsquecida = (f, hoje) => !!f.vencimento && f.vencimento < somaDias(hoje, -40);
+
+// Limite compartilhado (planilha 1.18): um cartão pode usar o limite de outro
+// (ex.: adicionais). O uso de todos é somado no limite do cartão principal.
+export const principalDoLimite = (db, c) => (c && c.limiteCom && porId(db.cartoes, c.limiteCom)) || c;
+export function grupoDoLimite(db, c) {
+  const p = principalDoLimite(db, c);
+  return { principal: p, cartoes: db.cartoes.filter((x) => ativo(x) && (x.id === p.id || x.limiteCom === p.id)), limite: Number(p.limite) || 0 };
+}
+// Uso do limite: faturas ainda não pagas (inclui parcelas futuras)
+export const usadoNoLimite = (db, c, hoje) => arred(faturasDoCartao(db, c.id).filter((f) => !faturaEsquecida(f, hoje) && situacaoFatura(db, f, hoje) !== 'Paga').reduce((s, f) => s + totalFatura(db, f.id), 0));
+export const nomeDoGrupo = (g) => String(g.principal.nome || '').split('|')[0].trim() + ' · ' + g.cartoes.length + ' cartões';
 
 // Fatura "atual" do cartão: a fechada ainda não paga (com valor, recente) ou,
 // se não houver, a que está aberta.

@@ -255,16 +255,21 @@ function seletorMes(E, acao = 'mudarMes') {
 const botaoOlho = (E) => `<button class="icone-btn" data-a="alternarOcultar" aria-label="${E.ocultar ? 'Mostrar valores' : 'Esconder valores'}">${ic(E.ocultar ? 'olhoFechado' : 'olho', 20)}</button>`;
 
 // Prévia de uma nova data numa compra parcelada
-function avisoDataParcelas(db, t, data) {
+function avisoDataParcelas(db, t, data, cartaoId, A) {
   if (!t) return '';
-  const pl = R.novaDataParcelas(db, t, data);
+  const pl = R.novaDataParcelas(db, t, data, cartaoId);
   const ord = (x) => x.parcela + 'ª';
-  if (pl.presas.length) return `<div class="info-caixa" style="margin-top:8px;color:var(--despesa)">Não dá para mudar a data: ${pl.presas.map((i) => 'a ' + ord(i.x) + ' parcela' + (i.x.conferido ? ' já foi conferida' : ' está numa fatura paga')).join(', ')} e sairia da fatura. Desmarque a conferência ou exclua e lance de novo.</div>`;
+  const trocaCartao = cartaoId && cartaoId !== t.cartao;
+  const oQue = trocaCartao && data !== t.data ? 'a data e o cartão' : trocaCartao ? 'o cartão' : 'a data';
+  if (pl.presas.length) return `<div class="info-caixa" style="margin-top:8px;color:var(--despesa)">Não dá para mudar ${oQue}: ${pl.presas.map((i) => 'a ' + ord(i.x) + ' parcela' + (i.x.conferido ? ' já foi conferida' : ' está numa fatura paga')).join(', ')} e sairia da fatura. Desmarque a conferência ou exclua e lance de novo.</div>`;
   const i1 = pl.itens[0];
   const txt = !pl.itens.some((i) => i.muda) ? `As ${pl.itens.length} parcelas continuam nas mesmas faturas.`
+    : trocaCartao ? `Elas vão para o ${esc(pl.cartao.nome)}: a 1ª na fatura de ${dataCurta(i1.f.vencimento)} e as outras nos meses seguintes.`
     : i1 && i1.muda ? `A 1ª parcela passa ${i1.atual ? 'da fatura de ' + dataCurta(i1.atual.vencimento) + ' ' : ''}para a de ${dataCurta(i1.f.vencimento)}; as outras seguem nos meses seguintes.`
     : `${pl.itens.filter((i) => i.muda).length} parcela(s) mudam de fatura.`;
-  return `<div class="info-caixa" style="margin-top:8px">A nova data vale para as ${pl.itens.length} parcelas. ${txt}</div>`;
+  const antes = R.porId(db.cartoes, t.cartao);
+  const quem = trocaCartao && A && antes && R.pagaPorDe(db, antes) !== R.pagaPorDe(db, pl.cartao) ? ` Quem paga passa a ser ${esc(A.nome(R.pagaPorDe(db, pl.cartao)))}, e isso muda o acerto.` : '';
+  return `<div class="info-caixa" style="margin-top:8px">${oQue.charAt(0).toUpperCase() + oQue.slice(1)} ${oQue.includes(' e ') ? 'valem' : 'vale'} para as ${pl.itens.length} parcelas. ${txt}${quem}</div>`;
 }
 
 // --------------------------------------------------------------- início
@@ -483,7 +488,7 @@ export function telaContas(E) {
     const ks = db.cartoes.filter((c) => c.dono === p.id && R.ativo(c));
     return `<div class="secao-titulo"><h2 style="color:var(--${{ gio: 'g', dem: 'd', fam: 'f' }[A.classe(p.id)]}-txt)">${p.tipo === 'Família' ? 'Da família' : (A.classe(p.id) === 'gio' ? 'Da ' : 'Do ') + esc(p.nome)}</h2></div>
       <div class="lista">${cs.map((c) => `<button class="item" data-a="editarConta" data-id="${c.id}"><span class="chip-cor" style="background:${corConta(c.cor)}">${esc(c.nome[0] || '?')}</span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">${esc(c.tipo || 'Conta')}</span></span><span class="valor">${sens(brl(R.saldoConta(db, c)))}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`).join('')}
-      ${ks.map((c) => `<button class="item" data-a="editarCartao" data-id="${c.id}"><span class="chip-cartao" style="background:${corConta(c.cor)}"><span></span></span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">Fecha dia ${c.fecha} · vence dia ${c.vence}${R.pagaPorDe(db, c) !== c.dono ? ' · paga: ' + esc(A.nome(R.pagaPorDe(db, c))) : ''}</span>${c.limite ? `<span class="sub">Limite ${sens(brl(c.limite))}</span>` : ''}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`).join('')}
+      ${ks.map((c) => `<button class="item" data-a="editarCartao" data-id="${c.id}"><span class="chip-cartao" style="background:${corConta(c.cor)}"><span></span></span><span class="principal-txt"><span class="titulo">${esc(c.nome)}</span><span class="sub">Fecha dia ${c.fecha} · vence dia ${c.vence}${R.pagaPorDe(db, c) !== c.dono ? ' · paga: ' + esc(A.nome(R.pagaPorDe(db, c))) : ''}</span>${c.limiteCom && R.porId(db.cartoes, c.limiteCom) ? `<span class="sub">Usa o limite do ${esc(R.porId(db.cartoes, c.limiteCom).nome)}</span>` : c.limite ? `<span class="sub">Limite ${sens(brl(c.limite))}${(() => { const n = R.grupoDoLimite(db, c).cartoes.length - 1; return n > 0 ? ' · dividido com ' + n + (n === 1 ? ' cartão' : ' cartões') : ''; })()}</span>` : ''}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`).join('')}
       ${!cs.length && !ks.length ? '<div class="vazio">Nada cadastrado.</div>' : ''}</div>`;
   };
   const arquivados = [...db.contas, ...db.cartoes].filter((c) => !R.ativo(c));
@@ -841,7 +846,7 @@ function modalLancar(E, A, m) {
   const fam = A.fam;
   const valor = lerValor(f.valor);
   const estorno = f.tipo === 'cartao' && f.estorno;
-  const cor = f.tipo === 'receita' || estorno ? 'var(--receita)' : f.tipo === 'transferencia' ? 'var(--text)' : 'var(--accent)';
+  const cor = f.tipo === 'receita' || estorno ? 'var(--receita)' : f.tipo === 'transferencia' ? 'var(--text)' : 'var(--despesa)'; // cor do tipo: valor e botão salvar
   const arte = f.tipo === 'transferencia' ? '' : `<img class="lanc-arte" src="assets/${A.gato(f.dono)}-${f.tipo === 'receita' || estorno ? 'receita' : 'despesa'}.webp" alt="">`;
   const linha = (icone, conteudo, extra = '') => `<div class="linha-form" ${extra}>${ic(icone, 22)}${conteudo}</div>`;
   const escolha = (rot, val, acao, v) => `<button class="escolha" data-a="${acao}" data-v="${v || ''}"><span style="flex:1;min-width:0"><span class="rot">${rot}</span><span class="val">${val}</span></span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`;
@@ -851,7 +856,7 @@ function modalLancar(E, A, m) {
   const ehPessoa = f.dono && !(fam && f.dono === fam.id);
   const parcelado = f.grupo && f.parcelas > 1;
 
-  const datas = `<div class="chips">${[['hoje', 'Hoje'], ['ontem', 'Ontem'], ['outra', 'Outra data']].map(([id, n]) => `<button class="chip" aria-pressed="${f.dataModo === id}" data-a="lancData" data-v="${id}">${n}</button>`).join('')}</div>${f.dataModo === 'outra' ? `<input type="date" class="entrada" style="width:auto;height:36px" data-campo="data" value="${esc(f.data)}">` : ''}${parcelado && m.editando && f.dataOrig && f.data && f.data !== f.dataOrig ? avisoDataParcelas(db, R.porId(db.transacoes, m.editando), f.data) : ''}`;
+  const datas = `<div class="chips">${[['hoje', 'Hoje'], ['ontem', 'Ontem'], ['outra', 'Outra data']].map(([id, n]) => `<button class="chip" aria-pressed="${f.dataModo === id}" data-a="lancData" data-v="${id}">${n}</button>`).join('')}</div>${f.dataModo === 'outra' ? `<input type="date" class="entrada" style="width:auto;height:36px" data-campo="data" value="${esc(f.data)}">` : ''}`;
   const pagador = (() => {
     if (f.tipo === 'cartao') { const c = A.cartao(f.cartao); return c ? R.pagaPorDe(db, c) : ''; }
     const c = A.conta(f.conta); return c ? c.dono : '';
@@ -879,12 +884,13 @@ function modalLancar(E, A, m) {
       const c = A.cartao(f.cartao);
       let sub = '';
       if (c) { const fat = R.faturaPara(db, c, f.data); sub = `<span class="rot" style="margin-top:2px">Fatura de ${dataCurta(fat.vencimento)} · conta em ${nomeMesAno(fat.mesRenda).split(' ')[0].toLowerCase()}</span>`; }
-      corpo += linha('cartao', parcelado ? `<span style="flex:1"><span class="rot" style="display:block;font-size:12px;color:var(--muted)">Cartão</span><span class="val" style="font-weight:700">${cartaoTxt(f.cartao)}</span></span>` : `<button class="escolha" data-a="abrirSeletor" data-v="cartao"><span style="flex:1;min-width:0"><span class="rot">Cartão</span><span class="val">${cartaoTxt(f.cartao)}</span>${sub}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`);
+      corpo += linha('cartao', `<button class="escolha" data-a="abrirSeletor" data-v="cartao"><span style="flex:1;min-width:0"><span class="rot">Cartão</span><span class="val">${cartaoTxt(f.cartao)}</span>${parcelado ? '' : sub}</span>${ic('seta', 18, 'style="color:var(--muted)"')}</button>`);
+      if (parcelado && m.editando && ((f.dataOrig && f.data && f.data !== f.dataOrig) || (f.cartaoOrig && f.cartao !== f.cartaoOrig))) corpo += `<div style="padding:0 16px 8px">${avisoDataParcelas(db, R.porId(db.transacoes, m.editando), f.data, f.cartao, A)}</div>`;
       if (estorno) corpo += `<div class="muted" style="font-size:12.5px;padding:8px 16px 8px 52px">O valor volta como crédito na fatura da data do estorno e abate dos gastos do mês dela, pela mesma divisão.</div>`;
       else if (!m.editando) {
         corpo += linha('camadas', `<span style="flex:1;font-size:15px">Parcelas</span><span class="passo"><button data-a="parcelas" data-v="-1" aria-label="Menos parcelas">−</button><span class="v">${f.parcelas > 1 ? f.parcelas + 'x' : 'À vista'}</span><button data-a="parcelas" data-v="1" aria-label="Mais parcelas">+</button></span>`);
         if (f.parcelas > 1 && valor) corpo += `<div class="muted" style="font-size:12.5px;padding:0 16px 8px 52px">${f.parcelas}x de ${brl(R.valoresParcelas(valor, f.parcelas)[1] || valor)} · uma em cada fatura</div>`;
-      } else if (parcelado) corpo += `<div class="muted" style="font-size:12.5px;padding:8px 16px">Parcela de uma compra parcelada. A data vale para todas as parcelas. Nos outros campos, ao salvar, você escolhe se a mudança vale só para esta parcela ou também para as próximas ainda não conferidas. Para mudar o cartão, exclua e lance de novo.</div>`;
+      } else if (parcelado) corpo += `<div class="muted" style="font-size:12.5px;padding:8px 16px">Parcela de uma compra parcelada. A data e o cartão valem para todas as parcelas. Nos outros campos, ao salvar, você escolhe se a mudança vale só para esta parcela ou também para as próximas ainda não conferidas.</div>`;
     } else {
       corpo += linha('banco', escolha(f.tipo === 'receita' ? 'Caiu na conta' : 'Saiu da conta', contaTxt(f.conta), 'abrirSeletor', 'conta'));
       if (f.tipo === 'despesa') corpo += linha('cartao', `<div class="chips">${['Pix', 'Débito', 'Boleto', 'Débito automático', 'Dinheiro'].map((x) => `<button class="chip" aria-pressed="${f.meio === x}" data-a="lancMeio" data-v="${x}">${x}</button>`).join('')}</div>`);
@@ -1048,7 +1054,16 @@ function modalFiltros(E, A) {
 function modalFixa(E, A, m) {
   const f = m.form;
   const origem = f.cartao ? (A.cartao(f.cartao) || {}).nome : A.nomeConta(f.conta);
-  const corpo = `<p class="muted" style="margin:6px 4px 0;font-size:13px">${esc(f.tipo || 'Despesa')} · ${esc(origem || '')} · ${esc(A.nome(f.dono))}</p>
+  const p = m.prevId ? R.acharPrevisto(E.db, m.prevId) : null;
+  const ehEntrada = f.tipo === 'Renda' || f.tipo === 'Receita';
+  const pend = p ? `<div class="cartao" style="margin-top:12px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>Em ${esc(nomeMesAno(mesDe(p.data)).split(' ')[0].toLowerCase())}</strong><span class="pill aviso">Falta lançar</span></div>
+      <div class="muted" style="font-size:13px;margin-top:2px">Previsto para ${dataCurta(p.data)} · ${sens((ehEntrada ? '+ ' : '− ') + brl(p.valor))}</div>
+      <button class="btn btn-pri btn-largo" style="margin-top:12px" data-a="fixaConfirmar">${ic('ok', 18)}Confirmar lançamento</button>
+      <button class="btn btn-borda btn-largo" style="margin-top:8px" data-a="fixaPular">Pular este mês</button>
+    </div>
+    <div class="secao-titulo" style="margin-top:18px"><h2>Daqui em diante</h2></div>` : '';
+  const corpo = `<p class="muted" style="margin:6px 4px 0;font-size:13px">${esc(f.tipo || 'Despesa')} · ${esc(origem || '')} · ${esc(A.nome(f.dono))}</p>${pend}
     <label class="campo"><span>Descrição</span><input class="entrada" data-campo="desc" value="${esc(f.desc)}"></label>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label class="campo"><span>Valor previsto (R$)</span><input class="entrada" inputmode="numeric" data-campo="valor" data-mascara="dinheiro" value="${esc(f.valor)}"></label>
@@ -1198,6 +1213,16 @@ function modalConta(E, A, m) {
 function modalCartao(E, A, m) {
   const f = m.form;
   const cores = ['Roxo', 'Azul', 'Verde', 'Laranja', 'Vermelho', 'Preto', 'Cinza'];
+  // limite próprio ou dividido com outro cartão (planilha 1.18)
+  const podeDividir = !E.banco || E.banco.demo || E.banco.temCampo('cartoes', 'limiteCom');
+  const principais = E.db.cartoes.filter((c) => R.ativo(c) && c.id !== f.id && !c.limiteCom);
+  const dividido = !!f.limiteModoDiv || !!f.limiteCom;
+  const alvoLim = R.porId(E.db.cartoes, f.limiteCom);
+  const blocoLimite = `<div class="campo" style="grid-column:1/-1"><span>Limite</span>
+      ${podeDividir && principais.length ? `<div class="chips" style="margin-bottom:8px">${[['proprio', 'Próprio'], ['dividido', 'Dividido com outro cartão']].map(([v, n]) => `<button class="chip" aria-pressed="${(v === 'dividido') === dividido}" data-a="formLimiteModo" data-v="${v}">${n}</button>`).join('')}</div>` : ''}
+      ${dividido ? `<select class="entrada" data-campo="limiteCom"><option value="">Escolha o cartão</option>${principais.map((c) => `<option value="${c.id}" ${f.limiteCom === c.id ? 'selected' : ''}>${esc(c.nome)}${c.limite ? ' · ' + brl(c.limite) : ''}</option>`).join('')}</select>
+        <span class="muted" style="font-size:12.5px;display:block;margin-top:6px">${alvoLim ? 'O uso deste cartão soma no limite de ' + (alvoLim.limite ? brl(alvoLim.limite) + ' do ' : '') + esc(alvoLim.nome) + '.' : 'Ex.: cartões adicionais do mesmo banco, que dividem um limite só.'}</span>`
+      : `<input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="limite" value="${esc(f.limite)}" placeholder="0,00" aria-label="Limite (R$)">`}</div>`;
   const ex = f.rendaRef === 'Mesmo mês do vencimento' ? 'Ex.: a fatura que vence em dezembro conta como gasto de dezembro.' : 'Ex.: a fatura que vence em dezembro conta como gasto de novembro (renda, metas e acerto de novembro).';
   const corpo = `
     <label class="campo"><span>Nome</span><input class="entrada" data-campo="nome" value="${esc(f.nome)}" placeholder="Ex.: Nubank Giovanna"></label>
@@ -1211,7 +1236,7 @@ function modalCartao(E, A, m) {
     </div>
     <div class="campo"><span>As compras deste cartão contam no mês</span><div class="chips">${[['Mês anterior ao vencimento', 'Anterior ao vencimento'], ['Mesmo mês do vencimento', 'Do vencimento']].map(([v, n]) => `<button class="chip" aria-pressed="${f.rendaRef === v}" data-a="formRendaRef" data-v="${v}">${n}</button>`).join('')}</div><div class="muted" style="font-size:12.5px;margin-top:6px">${ex}</div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <label class="campo" style="grid-column:1/-1"><span>Limite (R$)</span><input class="entrada" inputmode="numeric" data-mascara="dinheiro" data-campo="limite" value="${esc(f.limite)}"></label>
+      ${blocoLimite}
     </div>
     <div class="campo"><span>Cor</span><div class="chips">${cores.map((c) => `<button class="icone-btn" style="width:40px;height:40px;background:${corConta(c)};border:2px solid ${f.cor === c ? 'var(--text)' : 'transparent'}" data-a="formCor" data-v="${c}" aria-label="${c}" aria-pressed="${f.cor === c}"></button>`).join('')}</div></div>
     <button class="btn btn-pri btn-largo" style="margin-top:20px" data-a="salvarCartao" ${E.salvando ? 'aria-disabled="true"' : ''}>${E.salvando ? 'Salvando…' : f.id ? 'Salvar alterações' : 'Salvar cartão'}</button>

@@ -37,7 +37,7 @@ export const OBRIGATORIOS = ['contas', 'faturas'];
 const LIGADOS = ['resumo', 'acerto', 'avisos', 'ultimos', 'fixas', 'contas', 'faturas', 'metas'];
 const LARGOS = ['resumo', 'ultimos'];
 
-// Preferências do Início do perfil (guardadas neste aparelho)
+// Preferências do Início do perfil (cópia no aparelho; com a planilha 1.18, a planilha manda)
 export function prefsInicio(perfil) {
   const p = LSget('inicio-' + perfil, null);
   const ids = BLOCOS.map(([id]) => id);
@@ -63,7 +63,7 @@ export function modalInicio(E, A, m) {
       <button class="icone-btn" data-a="inicioMover" data-id="${id}" data-v="1" aria-label="Descer ${esc(nomes[id][0])}" ${i === pr.ordem.length - 1 ? 'disabled style="opacity:.3"' : ''}><span style="display:inline-block;transform:rotate(90deg)">${ic('seta', 18)}</span></button>
     </div>`;
   }).join('');
-  const corpo = `<p class="muted" style="font-size:13px;margin:6px 4px 10px">Fica salvo neste aparelho, só para ${esc(A.nome(E.perfil))}.</p>
+  const corpo = `<p class="muted" style="font-size:13px;margin:6px 4px 10px">${E.banco && (E.banco.demo || E.banco.temCampo('prefs', 'valor')) ? 'Vale para ' + esc(A.nome(E.perfil)) + ' em todos os seus aparelhos.' : 'Fica salvo neste aparelho, só para ' + esc(A.nome(E.perfil)) + '.'}</p>
     ${lista}
     <button class="btn btn-pri btn-largo" style="margin-top:16px" data-a="salvarInicio">Salvar</button>
     <button class="btn btn-largo" style="margin-top:6px;background:transparent;color:var(--muted)" data-a="inicioPadrao">Voltar ao padrão</button>`;
@@ -109,9 +109,22 @@ export function blocoExtra(E, A, id, res) {
   }
   if (id === 'limite') {
     const hoje = hojeISO();
-    const cartoes = db.cartoes.filter((c) => R.ativo(c) && Number(c.limite) > 0 && (ehFam ? c.dono === fam.id : c.dono === p || R.pagaPorDe(db, c) === p));
-    const usado = (c) => arred(R.faturasDoCartao(db, c.id).filter((f) => !R.faturaEsquecida(f, hoje) && R.situacaoFatura(db, f, hoje) !== 'Paga').reduce((s, f) => s + R.totalFatura(db, f.id), 0));
-    return titulo('Limite dos cartões' + deHoje, 'faturas', 'Ver faturas') + `<div class="lista">${cartoes.length ? cartoes.map((c) => { const u = usado(c); const pct = u / Number(c.limite); return `<a class="item" href="#/faturas" style="flex-direction:column;align-items:stretch;gap:0"><span style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="display:flex;gap:8px;align-items:center;min-width:0"><span class="chip-cor" style="background:${corConta(c.cor)};width:24px;height:24px;font-size:12px">${esc(c.nome[0])}</span><span class="titulo">${esc(c.nome)}</span></span><span style="white-space:nowrap;font-size:13px"><strong>${sens(brl(u))}</strong> <span class="muted">de ${sens(brl(c.limite))}</span></span></span>${barra(pct, corPct(pct))}<span class="muted" style="font-size:12px;margin-top:4px">disponível ${sens(brl(Math.max(0, Number(c.limite) - u)))} · inclui parcelas futuras</span></a>`; }).join('') : '<div class="vazio">Nenhum cartão com limite cadastrado neste perfil.</div>'}</div>`;
+    const visiveis = db.cartoes.filter((c) => R.ativo(c) && (ehFam ? c.dono === fam.id : c.dono === p || R.pagaPorDe(db, c) === p));
+    const grupos = [];
+    visiveis.forEach((c) => { const g = R.grupoDoLimite(db, c); if (g.limite > 0 && !grupos.some((x) => x.principal.id === g.principal.id)) grupos.push(g); });
+    const corDono = (id) => ({ dem: 'var(--d)', gio: 'var(--g)', fam: 'var(--f)' }[A.classe(id)] || 'var(--accent)');
+    const linhaGrupo = (g) => {
+      const usos = g.cartoes.map((c) => [c, R.usadoNoLimite(db, c, hoje)]);
+      const u = arred(usos.reduce((s, [, v]) => s + v, 0));
+      const pct = u / g.limite;
+      const varios = g.cartoes.length > 1;
+      const c0 = g.principal;
+      const nome = varios ? R.nomeDoGrupo(g) : c0.nome;
+      const barraG = varios ? `<span class="barra-seg">${usos.map(([c, v]) => `<span style="width:${Math.max(0, Math.min(100, (v / g.limite) * 100)).toFixed(2)}%;background:${corDono(c.dono)}"></span>`).join('')}</span>` : barra(pct, corPct(pct));
+      const legenda = varios ? `<span class="muted legenda-lim">${usos.map(([c, v]) => `<span><i style="background:${corDono(c.dono)}"></i>${esc(A.nome(c.dono))} ${sens(brl(v).replace('R$\u00a0', ''))}</span>`).join('')}</span>` : '';
+      return `<a class="item" href="#/faturas" style="flex-direction:column;align-items:stretch;gap:0"><span style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="display:flex;gap:8px;align-items:center;min-width:0"><span class="chip-cor" style="background:${corConta(c0.cor)};width:24px;height:24px;font-size:12px">${esc(c0.nome[0])}</span><span class="titulo">${esc(nome)}</span></span><span style="white-space:nowrap;font-size:13px"><strong>${sens(brl(u))}</strong> <span class="muted">de ${sens(brl(g.limite))}</span></span></span>${barraG}<span class="muted" style="font-size:12px;margin-top:4px;${pct >= 0.8 ? 'color:' + corPct(pct) : ''}">disponível ${sens(brl(Math.max(0, g.limite - u)))} · inclui parcelas futuras</span>${legenda}</a>`;
+    };
+    return titulo('Limite dos cartões' + deHoje, 'faturas', 'Ver faturas') + `<div class="lista">${grupos.length ? grupos.map(linhaGrupo).join('') : '<div class="vazio">Nenhum cartão com limite cadastrado neste perfil.</div>'}</div>`;
   }
   if (id === 'investimentos') {
     const C = T2.calcInvest(E);
@@ -207,7 +220,7 @@ export function telaConfig(E) {
         ${linha(esc(E.banco ? E.banco.titulo || 'Planilha' : ''), E.banco && E.banco.demo ? 'Modo demonstração (dados de exemplo neste aparelho)' : E.banco && E.banco.offline ? 'Sem internet: usando a cópia deste aparelho' : 'Conectada', E.banco && !E.banco.demo ? `<a class="btn btn-peq btn-sec" href="https://docs.google.com/spreadsheets/d/${esc(E.banco.id)}" target="_blank" rel="noopener">Abrir</a>` : '')}
         ${E.banco && !E.banco.demo ? linha('Lançamentos sem internet', pend ? `${pend} esperando para ir para a planilha` : 'Nada esperando: tudo já está na planilha.', pend ? '<button class="btn btn-peq btn-sec" data-a="enviarFila">Enviar</button>' : '') : ''}
         ${linha('Atualizar dados', 'Lê a planilha de novo (útil depois de mexer nela direto).', '<button class="btn btn-peq btn-sec" data-a="recarregar">Atualizar</button>')}
-        ${E.banco && !E.banco.demo ? linha('Estrutura da planilha', E.banco.temCampo('metas', 'categorias') ? 'Atualizada (1.17)' : 'Desatualizada. Atualize a planilha (script de montagem) para usar isto.', '') : ''}
+        ${E.banco && !E.banco.demo ? linha('Estrutura da planilha', E.banco.temCampo('prefs', 'valor') && E.banco.temCampo('cartoes', 'limiteCom') ? 'Atualizada (1.18)' : 'Desatualizada. Rode o script de montagem 1.18 para usar o limite dividido e as preferências em todos os aparelhos.', '') : ''}
       </div>
       ${C ? `<div><div class="secao-titulo" style="margin-top:4px"><h2>Robô dos índices</h2></div>${T2.statusRobo(E, C).replace('margin-top:12px;', 'margin-top:0;')}</div>` : ''}
       <div class="cartao"><h2 style="font-size:16px;font-weight:800">Pessoas com acesso</h2>
@@ -217,7 +230,7 @@ export function telaConfig(E) {
       <div class="cartao"><h2 style="font-size:16px;font-weight:800">Conta</h2>
         ${linha('Trocar de planilha', '', '<button class="btn btn-peq btn-sec" data-a="trocarPlanilha">Trocar</button>')}
         ${linha('Sair', esc(E.email || ''), '<button class="btn btn-peq btn-perigo" data-a="sair">Sair</button>')}
-        <p class="muted" style="font-size:12px;margin-top:10px">Economiau ${esc(E.versao)} · as preferências desta tela ficam salvas neste aparelho.</p>
+        <p class="muted" style="font-size:12px;margin-top:10px">Economiau ${esc(E.versao)} · ${E.banco && (E.banco.demo || E.banco.temCampo('prefs', 'valor')) ? 'avisos e esconder valores valem em todos os seus aparelhos; tema e perfil ao abrir ficam neste aparelho.' : 'as preferências desta tela ficam salvas neste aparelho.'}</p>
       </div>
   </div>`;
   return casca(E, 'Configurações', corpo, { voltar: 'mais' });

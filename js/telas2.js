@@ -258,9 +258,12 @@ export function telaInvestimentos(E) {
       <div class="kpi"><div class="r">Índices de</div><div class="v">${dataBR(ref.dia)}</div><div class="s">Banco Central, pelo robô da planilha</div></div>
     </div>` : `<div class="aviso-caixa" style="margin-top:12px">${ic('aviso', 18)}<span>A aba Índices está vazia. Na planilha, rode “Atualizar índices e investimentos” (ou espere o robô diário) para o app calcular os rendimentos.</span></div>`;
   const robo = statusRobo(E, C, true);
+  const larga = telaLarga();
+  const encerrados0 = (db.investimentos || []).filter((i) => !R.ativo(i) && (ehFam || i.titular === E.perfil));
+  const sel = larga ? (R.porId([...meus, ...daFamilia, ...encerrados0], E.invSel) || meus[0] || daFamilia[0] || encerrados0[0] || null) : null;
   const item = (inv) => {
     const r = C.res[inv.id] || { liquido: 0, rendimento: 0, aplicado: 0 };
-    return `<button class="item" data-a="abrirInvest" data-id="${inv.id}"><span class="principal-txt"><span class="titulo">${esc(inv.nome)}</span><span class="sub">${esc(inv.tipo || '')} · ${esc(descTaxa(inv))}${inv.vencimento ? ' · vence ' + dataBR(inv.vencimento) : ''}</span></span>
+    return `<button class="item" data-a="abrirInvest" data-id="${inv.id}" ${sel && sel.id === inv.id ? 'aria-current="true"' : ''}><span class="principal-txt"><span class="titulo">${esc(inv.nome)}</span><span class="sub">${esc(inv.tipo || '')} · ${esc(descTaxa(inv))}${inv.vencimento ? ' · vence ' + dataBR(inv.vencimento) : ''}</span></span>
       <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="valor">${sens(brl(r.liquido))}</span><span class="rec" style="font-size:12.5px;font-weight:700">+ ${sens(brl(r.rendimento))}</span></span></button>`;
   };
   const porTitular = ehFam
@@ -274,8 +277,13 @@ export function telaInvestimentos(E) {
       <div class="resumo-grande">${sens(brl(soma(meus, 'liquido')))}</div>
       <div class="muted" style="font-size:13px;margin-top:2px">aplicado ${sens(brl(soma(meus, 'aplicado')))} · rendeu ${sens(brl(soma(meus, 'rendimento')))} · IR e IOF estimados ${sens(brl(soma(meus, 'ir') + soma(meus, 'iof')))}</div></div>
     ${robo}${indices}
-    <div class="grade"><div>${listas}</div>${famBloco ? `<div>${famBloco}</div>` : ''}</div>
+    ${sel ? `<div>${listas}</div>${famBloco ? `<div>${famBloco}</div>` : ''}` : `<div class="grade"><div>${listas}</div>${famBloco ? `<div>${famBloco}</div>` : ''}</div>`}
     ${encerrados.length ? `<div class="secao-titulo"><h2>Resgatados ou arquivados</h2></div><div class="lista">${encerrados.map((i) => `<button class="item" style="opacity:.6" data-a="abrirInvest" data-id="${i.id}"><span class="principal-txt"><span class="titulo">${esc(i.nome)}</span><span class="sub">${esc(i.tipo || '')}</span></span></button>`).join('')}</div>` : ''}`;
+  if (sel) {
+    const d = detalheInvest(E, A, sel.id);
+    const lado = `<aside class="invest-detalhe" aria-label="${esc(d.titulo)}"><h2 class="invest-detalhe-titulo">${esc(d.titulo)}</h2><div class="invest-detalhe-corpo">${d.corpo}</div><div class="invest-detalhe-pe">${d.rodape}</div></aside>`;
+    return casca(E, 'Investimentos', `<div class="invest-duas"><div class="invest-col">${corpo}</div>${lado}</div>`, { voltar: 'mais' });
+  }
   return casca(E, 'Investimentos', corpo, { voltar: 'mais' });
 }
 
@@ -292,9 +300,17 @@ const telaModal = (titulo, corpo, rodape = '', larga = false) => `${veu()}<div c
   <div class="rolar" style="padding:0 16px 20px">${corpo}</div>${rodape ? `<div class="rodape-fixo">${rodape}</div>` : ''}</div>`;
 
 export function modalInvest(E, A, m) {
+  const d = detalheInvest(E, A, m.id);
+  return d ? telaModal(d.titulo, d.corpo, d.rodape, true) : '';
+}
+
+// Detalhe de um investimento: no celular abre em tela cheia; no computador
+// fica fixo na coluna da direita da tela Investimentos.
+export const telaLarga = () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(min-width: 1100px)').matches;
+function detalheInvest(E, A, id) {
   const db = E.db;
-  const inv = R.porId(db.investimentos, m.id);
-  if (!inv) return '';
+  const inv = R.porId(db.investimentos, id);
+  if (!inv) return null;
   const C = calcInvest(E);
   const r = C.res[inv.id];
   const faixa = I.proximaFaixa(r.lotes, hojeISO());
@@ -333,8 +349,8 @@ export function modalInvest(E, A, m) {
     <h2 style="font-size:15px;font-weight:800;margin-top:18px">Movimentações</h2>
     <div>${movs || '<div class="vazio">Nenhuma movimentação.</div>'}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px"><button class="btn btn-borda" data-a="editarInvest" data-id="${inv.id}">${ic('lapis', 18)}Editar</button><button class="btn btn-borda" data-a="arquivarInvest" data-id="${inv.id}">${inv.status === 'Arquivado' ? 'Reativar' : 'Arquivar'}</button></div>`;
-  const rodape = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%"><button class="btn btn-sec" data-a="novoMov" data-v="Aporte">${ic('mais_', 18)}Aportar</button><button class="btn btn-pri" data-a="novoMov" data-v="Resgate" ${r.bruto > 0 ? '' : 'aria-disabled="true"'}>Resgatar</button></div>`;
-  return telaModal(inv.nome, corpo, rodape, true);
+  const rodape = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%"><button class="btn btn-sec" data-a="novoMov" data-id="${inv.id}" data-v="Aporte">${ic('mais_', 18)}Aportar</button><button class="btn btn-pri" data-a="novoMov" data-id="${inv.id}" data-v="Resgate" ${r.bruto > 0 ? '' : 'aria-disabled="true"'}>Resgatar</button></div>`;
+  return { titulo: inv.nome, corpo, rodape };
 }
 
 const TIPOS_INV = ['CDB', 'LCI', 'LCA', 'Tesouro Selic', 'Tesouro IPCA+', 'Tesouro Prefixado', 'Poupança', 'Outro'];
