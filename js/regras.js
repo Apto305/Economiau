@@ -159,6 +159,7 @@ export function grupoDoLimite(db, c) {
 }
 // Uso do limite: faturas ainda não pagas (inclui parcelas futuras)
 export const usadoNoLimite = (db, c, hoje) => arred(faturasDoCartao(db, c.id).filter((f) => !faturaEsquecida(f, hoje) && situacaoFatura(db, f, hoje) !== 'Paga').reduce((s, f) => s + totalFatura(db, f.id), 0));
+export const nomeBaseDoGrupo = (g) => String(g.principal.nome || '').split('|')[0].trim() || g.principal.nome || '';
 export const nomeDoGrupo = (g) => String(g.principal.nome || '').split('|')[0].trim() + ' · ' + g.cartoes.length + ' cartões';
 
 // Fatura "atual" do cartão: a fechada ainda não paga (com valor, recente) ou,

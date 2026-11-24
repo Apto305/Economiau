@@ -347,6 +347,21 @@ function tratarErro(e) {
   avisar(e.message || 'Algo deu errado.', true);
 }
 
+
+// Campos do lançamento que, ao mudar numa parcela, pedem a escolha "só esta / esta e as próximas".
+// Data e cartão ficam de fora: eles sempre valem para a compra inteira.
+const FORA_DO_RETRATO = ['data', 'dataModo', 'cartao', 'tagNova', 'orig', 'dataOrig', 'cartaoOrig'];
+function retratoDoForm(f) {
+  const o = {};
+  Object.keys(f).forEach((k) => { if (!FORA_DO_RETRATO.includes(k)) o[k] = k === 'valor' ? arred(lerValor(f.valor)) : JSON.stringify(f[k]); });
+  return o;
+}
+function outrosCamposMudaram(f) {
+  if (!f.orig) return true;
+  const agora = retratoDoForm(f);
+  return Object.keys(f.orig).some((k) => agora[k] !== f.orig[k]);
+}
+
 async function salvar(fn) {
   if (E.salvando) return;
   E.salvando = true; desenhar();
@@ -992,6 +1007,8 @@ const A = {
       const pl = R.novaDataParcelas(E.db, R.porId(E.db.transacoes, E.modal.editando), f.data, f.cartao);
       if (pl.presas.length) return avisar('Não dá para salvar: há parcela conferida ou em fatura paga que sairia da fatura dela.', true);
     }
+    // Só a data e/ou o cartão mudaram: valem para todas as parcelas, então não há o que perguntar
+    if (E.modal.editando && f.grupo && f.parcelas > 1 && !E.modal.escopo && mudaParc && !outrosCamposMudaram(f)) E.modal.escopo = 'uma';
     if (E.modal.editando && f.grupo && f.parcelas > 1 && !E.modal.escopo) {
       const t = R.porId(E.db.transacoes, E.modal.editando);
       const prox = E.db.transacoes.filter((x) => x.grupoParc === t.grupoParc && x.id !== t.id && !x.conferido && x.parcela > t.parcela).length;
@@ -1039,6 +1056,7 @@ const A = {
         tags: R.tagsDe(t), tagNova: '', deduz: !!t.deduz, recorrencia: t.recorrencia || '', estorno: t.tipo === R.TIPO.estorno, foraAcerto: !!t.foraAcerto, divisao: t.divisao || '',
       },
     };
+    E.modal.form.orig = retratoDoForm(E.modal.form);
     desenhar();
   },
   confirmarPrevisto() {
